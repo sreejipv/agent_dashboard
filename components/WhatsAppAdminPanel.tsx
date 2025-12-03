@@ -16,6 +16,7 @@ export default function WhatsAppAdminPanel() {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState({
+    backendUrl: "", // Auto-detect Vercel URL or use relative paths
     accessToken: "",
     phoneNumberId: "",
     whatsappBusinessAccountId: "",
@@ -31,25 +32,45 @@ export default function WhatsAppAdminPanel() {
 
   // Load config from localStorage
   useEffect(() => {
+    // Auto-detect if we're on Vercel or localhost
+    const isProduction = window.location.hostname !== "localhost";
+    const baseUrl = isProduction ? "" : "http://localhost:3001";
+
     const saved = localStorage.getItem("whatsapp-config");
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setConfig(parsed);
+        // Merge with auto-detected backendUrl if not set
+        setConfig({
+          backendUrl: parsed.backendUrl || baseUrl,
+          accessToken: parsed.accessToken || "",
+          phoneNumberId: parsed.phoneNumberId || "",
+          whatsappBusinessAccountId: parsed.whatsappBusinessAccountId || "",
+        });
       } catch (e) {
         // If parsing fails, use defaults
         setConfig({
+          backendUrl: baseUrl,
           accessToken: "",
           phoneNumberId: "",
           whatsappBusinessAccountId: "",
         });
       }
+    } else {
+      // No saved config, use defaults with auto-detected URL
+      setConfig({
+        backendUrl: baseUrl,
+        accessToken: "",
+        phoneNumberId: "",
+        whatsappBusinessAccountId: "",
+      });
     }
   }, []);
 
   // Save config to localStorage
   useEffect(() => {
     if (
+      config.backendUrl ||
       config.accessToken ||
       config.phoneNumberId ||
       config.whatsappBusinessAccountId
@@ -59,54 +80,58 @@ export default function WhatsAppAdminPanel() {
   }, [config]);
 
   const fetchMessages = async () => {
-    if (!config.accessToken || !config.phoneNumberId) {
-      setError(
-        "Please configure your Access Token and Phone Number ID in Settings"
-      );
-      setShowConfig(true);
-      return;
-    }
-
     setLoading(true);
     setError("");
 
     try {
-      // Verify the phone number configuration
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/${config.phoneNumberId}?fields=verified_name,code_verification_status,quality_rating,messaging_limit_tier`,
-        {
-          headers: {
-            Authorization: `Bearer ${config.accessToken}`,
-          },
-        }
-      );
+      // Use relative path for Vercel, or configured backend URL for local
+      const apiUrl = config.backendUrl
+        ? `${config.backendUrl}/api/verify-phone`
+        : "/api/verify-phone";
+      const response = await fetch(apiUrl);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.error?.message || `API Error: ${response.status}`
-        );
+        throw new Error(`Server Error: ${response.status}`);
       }
 
       const data = await response.json();
 
-      setSuccess(
-        `✓ Connected to WhatsApp Business API! Phone: ${
-          data.verified_name || "Verified"
-        }. Note: Messages are received via webhooks only.`
-      );
+      if (data.success) {
+        setSuccess(
+          `✓ Connected to WhatsApp Business API! Phone: ${
+            data.data?.verified_name || "Verified"
+          }. Webhooks ready to receive messages.`
+        );
 
-      // Show info about webhook requirement
+        // Also try to fetch existing messages
+        try {
+          const messagesUrl = config.backendUrl
+            ? `${config.backendUrl}/api/messages`
+            : "/api/messages";
+          const msgResponse = await fetch(messagesUrl);
+          if (msgResponse.ok) {
+            const msgData = await msgResponse.json();
+            if (msgData.success && msgData.messages?.length > 0) {
+              setMessages(msgData.messages);
+            }
+          }
+        } catch (err) {
+          console.log("No stored messages yet");
+        }
+      } else {
+        throw new Error(data.error || "Unknown error");
+      }
+
       if (messages.length === 0) {
         setTimeout(() => {
           setError(
-            '⚠️ To receive incoming messages, you must configure webhooks. This panel can send messages. Click "Add Demo Message" to see the UI in action.'
+            '⚠️ Configure webhooks in Meta to receive messages. Use "Add Demo Message" to test UI.'
           );
         }, 3000);
       }
     } catch (err: any) {
       setError(
-        `Connection Failed: ${err.message}. Check your credentials and permissions.`
+        `Connection Failed: ${err.message}. Check your Vercel environment variables or API setup.`
       );
     } finally {
       setLoading(false);
@@ -123,40 +148,31 @@ export default function WhatsAppAdminPanel() {
     setError("");
 
     try {
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/${config.phoneNumberId}/messages`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${config.accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            to: selectedConversation,
-            type: "text",
-            text: { body: messageText },
-          }),
-        }
-      );
+      const apiUrl = config.backendUrl
+        ? `${config.backendUrl}/api/send-message`
+        : "/api/send-message";
 
-      const errorData = await response.json();
-
-      if (!response.ok) {
-        const errorMessage =
-          errorData.error?.message ||
-          errorData.error?.error_user_msg ||
-          "Failed to send message";
-        const errorType = errorData.error?.type || "Unknown Error";
-        throw new Error(`${errorType}: ${errorMessage}`);
-      }
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: selectedConversation,
+          message: messageText,
+        }),
+      });
 
       const data = await response.json();
 
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to send message");
+      }
+
       // Add sent message to list
       const newMessage = {
-        id: data.messages[0].id,
-        from: config.phoneNumberId,
+        id: data.messageId || `msg_${Date.now()}`,
+        from: "You",
         to: selectedConversation,
         text: messageText,
         timestamp: Date.now() / 1000,
@@ -166,10 +182,10 @@ export default function WhatsAppAdminPanel() {
 
       setMessages((prev) => [newMessage, ...prev]);
       setMessageText("");
-      setSuccess("Message sent successfully");
+      setSuccess("✅ Message sent successfully");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err: any) {
-      setError(`Failed to send message: ${err.message}`);
+      setError(`Failed to send: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -211,9 +227,7 @@ export default function WhatsAppAdminPanel() {
 
   // Get unique conversations
   const conversations = Array.from(
-    new Set(
-      messages.map((m) => (m.from === config.phoneNumberId ? m.to : m.from))
-    )
+    new Set(messages.map((m) => (m.from === "You" ? m.to : m.from)))
   );
 
   return (
@@ -248,7 +262,7 @@ export default function WhatsAppAdminPanel() {
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <Settings className="w-5 h-5" />
-              API Configuration
+              Configuration
             </h2>
             <form
               onSubmit={(e) => {
@@ -257,50 +271,31 @@ export default function WhatsAppAdminPanel() {
               }}
               className="space-y-4"
             >
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Access Token
-                </label>
-                <input
-                  type="password"
-                  value={config.accessToken}
-                  onChange={(e) =>
-                    setConfig({ ...config, accessToken: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Enter your Meta access token"
-                />
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                <p className="text-sm text-blue-800">
+                  <strong>✓ Auto-configured for Vercel</strong>
+                </p>
+                <p className="text-xs text-blue-700 mt-1">
+                  Your credentials are stored in Vercel Environment Variables.
+                  Go to Project Settings → Environment Variables to configure.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number ID
+                  Backend URL (Optional - for local dev)
                 </label>
                 <input
                   type="text"
-                  value={config.phoneNumberId}
+                  value={config.backendUrl}
                   onChange={(e) =>
-                    setConfig({ ...config, phoneNumberId: e.target.value })
+                    setConfig({ ...config, backendUrl: e.target.value })
                   }
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Enter your phone number ID"
+                  placeholder="Leave empty for Vercel, or http://localhost:3001 for local"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Business Account ID
-                </label>
-                <input
-                  type="text"
-                  value={config.whatsappBusinessAccountId}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      whatsappBusinessAccountId: e.target.value,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Enter your business account ID"
-                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty when deployed on Vercel (uses relative paths)
+                </p>
               </div>
               <button
                 type="submit"
@@ -427,7 +422,7 @@ export default function WhatsAppAdminPanel() {
                   <div
                     key={msg.id}
                     className={`p-4 rounded-lg border ${
-                      msg.from === config.phoneNumberId
+                      msg.from === "You"
                         ? "bg-green-50 border-green-200 ml-8"
                         : "bg-gray-50 border-gray-200 mr-8"
                     }`}
@@ -435,9 +430,7 @@ export default function WhatsAppAdminPanel() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <User className="w-4 h-4 text-gray-600" />
-                        <span className="font-medium text-sm">
-                          {msg.from === config.phoneNumberId ? "You" : msg.from}
-                        </span>
+                        <span className="font-medium text-sm">{msg.from}</span>
                       </div>
                       <div className="flex items-center gap-1 text-xs text-gray-500">
                         <Clock className="w-3 h-3" />
@@ -480,18 +473,160 @@ export default function WhatsAppAdminPanel() {
 
         {/* Instructions */}
         <div className="mt-6 space-y-4">
+          <div className="bg-purple-50 border border-purple-300 rounded-lg p-6">
+            <h3 className="font-semibold text-purple-900 mb-3">
+              🚀 Vercel Deployment Setup
+            </h3>
+            <ol className="list-decimal ml-6 space-y-3 text-purple-800 text-sm">
+              <li>
+                <strong>Create API folder structure in your project:</strong>
+                <pre className="bg-purple-100 p-2 rounded mt-1 text-xs overflow-x-auto">
+                  {`your-project/
+
+├── api/
+│   ├── config.js
+│   ├── verify-phone.js
+│   ├── send-message.js
+│   ├── webhook.js
+│   └── messages.js
+└── (your React app files)`}
+                </pre>
+              </li>
+              <li>
+                <strong>Copy the API files:</strong> Copy all the code from the
+                "Vercel API Functions" artifact into the corresponding files
+              </li>
+              <li>
+                <strong>Set Environment Variables in Vercel:</strong>
+                <ul className="ml-4 mt-2 list-disc text-xs space-y-1">
+                  <li>
+                    Go to your Vercel project → Settings → Environment Variables
+                  </li>
+                  <li>
+                    Add:{" "}
+                    <code className="bg-purple-100 px-1 rounded">
+                      WHATSAPP_ACCESS_TOKEN
+                    </code>{" "}
+                    = Your Meta access token
+                  </li>
+                  <li>
+                    Add:{" "}
+                    <code className="bg-purple-100 px-1 rounded">
+                      WHATSAPP_PHONE_ID
+                    </code>{" "}
+                    = Your phone number ID
+                  </li>
+                  <li>
+                    Add:{" "}
+                    <code className="bg-purple-100 px-1 rounded">
+                      WEBHOOK_VERIFY_TOKEN
+                    </code>{" "}
+                    = Any secure string (e.g., "my_secret_123")
+                  </li>
+                </ul>
+              </li>
+              <li>
+                <strong>Deploy to Vercel:</strong>
+                <pre className="bg-purple-100 p-2 rounded mt-1 text-xs">
+                  git push origin main
+                </pre>
+                <p className="text-xs mt-1">
+                  Or use:{" "}
+                  <code className="bg-purple-100 px-1 rounded">
+                    vercel --prod
+                  </code>
+                </p>
+              </li>
+              <li>
+                <strong>Configure Webhooks in Meta:</strong>
+                <ul className="ml-4 mt-2 list-disc text-xs space-y-1">
+                  <li>Go to Meta App Dashboard → WhatsApp → Configuration</li>
+                  <li>
+                    Webhook URL:{" "}
+                    <code className="bg-purple-100 px-1 rounded">
+                      https://your-app.vercel.app/api/webhook
+                    </code>
+                  </li>
+                  <li>
+                    Verify Token: Same as{" "}
+                    <code className="bg-purple-100 px-1 rounded">
+                      WEBHOOK_VERIFY_TOKEN
+                    </code>{" "}
+                    from step 3
+                  </li>
+                  <li>
+                    Subscribe to fields: <strong>messages</strong>
+                  </li>
+                </ul>
+              </li>
+            </ol>
+          </div>
+
+          <div className="bg-green-50 border border-green-300 rounded-lg p-6">
+            <h3 className="font-semibold text-green-900 mb-3">
+              ✅ How It Works on Vercel
+            </h3>
+            <div className="space-y-2 text-green-800 text-sm">
+              <p>
+                <strong>Serverless Functions:</strong> Each API file becomes a
+                serverless endpoint
+              </p>
+              <ul className="ml-6 list-disc text-xs space-y-1 mt-2">
+                <li>
+                  <code className="bg-green-100 px-1 rounded">
+                    /api/verify-phone
+                  </code>{" "}
+                  - Check connection
+                </li>
+                <li>
+                  <code className="bg-green-100 px-1 rounded">
+                    /api/send-message
+                  </code>{" "}
+                  - Send WhatsApp messages
+                </li>
+                <li>
+                  <code className="bg-green-100 px-1 rounded">/api/webhook</code>{" "}
+                  - Receive incoming messages
+                </li>
+                <li>
+                  <code className="bg-green-100 px-1 rounded">/api/messages</code>{" "}
+                  - Get stored messages
+                </li>
+              </ul>
+              <p className="mt-3">
+                <strong>Security:</strong> ✓ No CORS issues, ✓ API keys hidden
+                in environment variables
+              </p>
+              <p>
+                <strong>Scalability:</strong> ✓ Auto-scales with traffic, ✓ No
+                server management needed
+              </p>
+            </div>
+          </div>
+
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
             <h3 className="font-semibold text-blue-900 mb-3">
-              📋 Setup Instructions:
+              📋 Getting Your Credentials:
             </h3>
             <ol className="list-decimal list-inside space-y-2 text-blue-800 text-sm">
               <li className="ml-2">
-                <strong>Get Access Token:</strong> Go to Meta Business Suite →
-                App Dashboard → WhatsApp → API Setup
+                <strong>Access Token:</strong>
                 <ul className="ml-6 mt-1 text-xs list-disc">
                   <li>
-                    Generate a permanent token (temporary tokens expire in 24
-                    hours)
+                    Go to{" "}
+                    <a
+                      href="https://developers.facebook.com/apps"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 underline"
+                    >
+                      Meta App Dashboard
+                    </a>
+                  </li>
+                  <li>Select your app → WhatsApp → API Setup</li>
+                  <li>
+                    Click "Generate Token" (choose permanent, not 24-hour
+                    temporary)
                   </li>
                   <li>
                     Required permission:{" "}
@@ -502,86 +637,66 @@ export default function WhatsAppAdminPanel() {
                 </ul>
               </li>
               <li className="ml-2">
-                <strong>Get Phone Number ID:</strong> In the same API Setup
-                page, copy your Phone Number ID
-              </li>
-              <li className="ml-2">
-                <strong>Configure in Settings:</strong> Click Settings button
-                above and paste your credentials
-              </li>
-              <li className="ml-2">
-                <strong>Test Connection:</strong> Click "Check API" to verify
-                your setup
-              </li>
-              <li className="ml-2">
-                <strong>Send Messages:</strong> Enter a recipient's WhatsApp
-                number and send messages
+                <strong>Phone Number ID:</strong>
+                <ul className="ml-6 mt-1 text-xs list-disc">
+                  <li>Same page (WhatsApp → API Setup)</li>
+                  <li>
+                    Copy the "Phone number ID" next to your WhatsApp number
+                  </li>
+                </ul>
               </li>
             </ol>
           </div>
 
           <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-6">
             <h3 className="font-semibold text-yellow-900 mb-2">
-              ⚠️ Important: How WhatsApp Business API Works
+              🔔 Receiving Messages (Webhooks)
             </h3>
             <div className="space-y-2 text-yellow-800 text-sm">
               <p>
-                <strong>Sending Messages:</strong> ✅ Works directly through
-                this panel using the API
+                <strong>How it works:</strong>
               </p>
-              <p>
-                <strong>Receiving Messages:</strong> ⚠️ Requires webhook
-                configuration:
-              </p>
-              <ul className="ml-6 mt-2 space-y-1 list-disc">
+              <ol className="list-decimal ml-6 space-y-1 text-xs mt-2">
+                <li>User sends WhatsApp message to your business number</li>
                 <li>
-                  WhatsApp sends incoming messages to YOUR server endpoint via
-                  POST requests
+                  Meta sends POST request to{" "}
+                  <code className="bg-yellow-100 px-1 rounded">
+                    your-app.vercel.app/api/webhook
+                  </code>
                 </li>
-                <li>You need a public HTTPS endpoint to receive webhooks</li>
-                <li>
-                  Configure webhook URL in Meta App Dashboard → WhatsApp →
-                  Configuration
-                </li>
-                <li>
-                  Your server must respond with status 200 and verify the
-                  webhook token
-                </li>
-                <li>
-                  Store received messages in your database, then display them
-                  here
-                </li>
-              </ul>
-              <p className="mt-3 p-2 bg-yellow-100 rounded">
-                <strong>For testing:</strong> Use the "Add Demo Message" button
-                to simulate incoming messages and see how the UI works.
+                <li>Your webhook function receives the message data</li>
+                <li>Store message in database (Vercel KV, MongoDB, etc.)</li>
+                <li>Display in this admin panel</li>
+              </ol>
+              <p className="mt-3 p-2 bg-yellow-100 rounded text-xs">
+                <strong>For immediate testing:</strong> Use "Add Demo Message"
+                button to simulate incoming messages
               </p>
             </div>
           </div>
 
-          <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-            <h3 className="font-semibold text-green-900 mb-2">
-              💡 Webhook Setup Guide
+          <div className="bg-red-50 border border-red-300 rounded-lg p-6">
+            <h3 className="font-semibold text-red-900 mb-2">
+              ⚠️ Important Notes
             </h3>
-            <div className="text-green-800 text-sm space-y-2">
-              <p>To receive messages, create a webhook endpoint that:</p>
-              <ol className="list-decimal ml-6 space-y-1">
-                <li>
-                  Accepts POST requests at{" "}
-                  <code className="bg-green-100 px-1 rounded">/webhook</code>
-                </li>
-                <li>
-                  Verifies GET requests with hub.mode, hub.verify_token,
-                  hub.challenge
-                </li>
-                <li>Processes incoming message data and stores it</li>
-                <li>Returns 200 status immediately</li>
-              </ol>
-              <p className="mt-2 text-xs">
-                Example tools: ngrok for local testing, Heroku/Vercel/AWS Lambda
-                for production
-              </p>
-            </div>
+            <ul className="ml-6 list-disc space-y-1 text-red-800 text-xs">
+              <li>
+                <strong>Database Required:</strong> To persist messages, add
+                Vercel KV, MongoDB, or PostgreSQL
+              </li>
+              <li>
+                <strong>24-Hour Window:</strong> You can only send template
+                messages outside 24-hour customer conversation window
+              </li>
+              <li>
+                <strong>Rate Limits:</strong> Meta has messaging limits based on
+                your business verification tier
+              </li>
+              <li>
+                <strong>Testing:</strong> Use Meta's test numbers during
+                development
+              </li>
+            </ul>
           </div>
         </div>
       </div>
