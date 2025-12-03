@@ -16,22 +16,29 @@ A modern Next.js admin panel for managing WhatsApp Business messages through the
 ### Prerequisites
 
 - Node.js 18+ installed
+- Git installed (for version control)
 - A Meta Business Account with WhatsApp Business API access
 - Access Token, Phone Number ID, and Business Account ID from Meta
 
 ### Installation
 
-1. Install dependencies:
+1. Clone the repository (if you haven't already):
+```bash
+git clone <your-repo-url>
+cd voidcochin
+```
+
+2. Install dependencies:
 ```bash
 npm install
 ```
 
-2. Run the development server:
+3. Run the development server:
 ```bash
 npm run dev
 ```
 
-3. Open [http://localhost:3000](http://localhost:3000) in your browser
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
 ### Configuration
 
@@ -91,6 +98,55 @@ Your configuration will be saved in browser localStorage and persist across sess
 - `npm run build` - Build for production
 - `npm start` - Start production server
 - `npm run lint` - Run ESLint
+
+## Git Setup
+
+This project is already initialized with Git. To set up a remote repository:
+
+1. **Create a repository on GitHub/GitLab/Bitbucket**
+
+2. **Add the remote**:
+```bash
+git remote add origin <your-repo-url>
+```
+
+3. **Push to remote**:
+```bash
+git branch -M main
+git push -u origin main
+```
+
+### Common Git Commands
+
+```bash
+# Check status
+git status
+
+# Stage changes
+git add .
+
+# Commit changes
+git commit -m "Your commit message"
+
+# Push to remote
+git push
+
+# Pull latest changes
+git pull
+
+# Create a new branch
+git checkout -b feature/your-feature-name
+
+# Switch branches
+git checkout main
+```
+
+### Branch Strategy
+
+- `main` - Production-ready code
+- `develop` - Development branch (optional)
+- `feature/*` - Feature branches
+- `fix/*` - Bug fix branches
 
 ## Notes
 
