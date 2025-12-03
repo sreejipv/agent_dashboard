@@ -585,11 +585,15 @@ export default function WhatsAppAdminPanel() {
                   - Send WhatsApp messages
                 </li>
                 <li>
-                  <code className="bg-green-100 px-1 rounded">/api/webhook</code>{" "}
+                  <code className="bg-green-100 px-1 rounded">
+                    /api/webhook
+                  </code>{" "}
                   - Receive incoming messages
                 </li>
                 <li>
-                  <code className="bg-green-100 px-1 rounded">/api/messages</code>{" "}
+                  <code className="bg-green-100 px-1 rounded">
+                    /api/messages
+                  </code>{" "}
                   - Get stored messages
                 </li>
               </ul>

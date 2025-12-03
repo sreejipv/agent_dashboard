@@ -23,17 +23,20 @@ A modern Next.js admin panel for managing WhatsApp Business messages through the
 ### Installation
 
 1. Clone the repository (if you haven't already):
+
 ```bash
 git clone <your-repo-url>
 cd voidcochin
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
 3. Run the development server:
+
 ```bash
 npm run dev
 ```
@@ -54,21 +57,35 @@ Your configuration will be saved in browser localStorage and persist across sess
 ## Setup Instructions
 
 1. **Get your Access Token**:
+
    - Go to [Meta Business Suite](https://business.facebook.com/)
    - Navigate to System Users or Access Tokens
    - Generate a token with `whatsapp_business_messaging` permissions
 
 2. **Find your Phone Number ID**:
+
    - In Meta Business Suite, go to WhatsApp > API Setup
    - Your Phone Number ID is displayed there
 
 3. **Get your Business Account ID**:
    - Found in the same WhatsApp API Setup section
 
-## API Endpoints Used
+## Architecture
 
-- `GET /v18.0/{phone-number-id}/messages` - Fetch messages
-- `POST /v18.0/{phone-number-id}/messages` - Send messages
+This project uses a hybrid approach:
+- **Webhooks (n8n)**: Receives incoming WhatsApp messages via n8n workflow
+- **Vercel API Functions**: Handles sending messages and fetching stored messages
+- **Database**: Messages are stored by n8n and fetched via Vercel API
+
+## API Endpoints
+
+### Vercel API Functions
+- `GET /api/verify-phone` - Verify WhatsApp connection
+- `POST /api/send-message` - Send WhatsApp messages
+- `GET /api/messages` - Fetch stored messages from database
+
+### n8n Webhook (External)
+- `POST /webhook` - Receives incoming messages (configured in n8n)
 
 ## Tech Stack
 
@@ -80,6 +97,12 @@ Your configuration will be saved in browser localStorage and persist across sess
 ## Project Structure
 
 ```
+├── api/
+│   ├── config.js        # Shared configuration
+│   ├── verify-phone.js  # Verify WhatsApp connection
+│   ├── send-message.js  # Send WhatsApp messages
+│   ├── messages.js      # Fetch messages from database
+│   └── README.md        # API documentation
 ├── app/
 │   ├── layout.tsx       # Root layout
 │   ├── page.tsx         # Home page
@@ -106,11 +129,13 @@ This project is already initialized with Git. To set up a remote repository:
 1. **Create a repository on GitHub/GitLab/Bitbucket**
 
 2. **Add the remote**:
+
 ```bash
 git remote add origin <your-repo-url>
 ```
 
 3. **Push to remote**:
+
 ```bash
 git branch -M main
 git push -u origin main
@@ -148,12 +173,24 @@ git checkout main
 - `feature/*` - Feature branches
 - `fix/*` - Bug fix branches
 
+## n8n Integration
+
+Since webhooks are handled by n8n:
+
+1. **Configure n8n webhook** to receive incoming WhatsApp messages
+2. **Add database node** in n8n workflow to store messages
+3. **Configure `api/messages.js`** to fetch from your database
+4. **Set environment variables** in Vercel for API access
+
+See `api/README.md` for detailed setup instructions.
+
 ## Notes
 
-- Configuration is stored in browser localStorage
+- Configuration is stored in browser localStorage (backend URL only)
+- API credentials are stored in Vercel environment variables
 - The app uses the Meta Graph API v18.0
 - Make sure your access token has the necessary permissions
-- CORS may need to be configured if making requests from a different domain
+- No CORS issues since API runs on same domain as frontend
 
 ## License
 
