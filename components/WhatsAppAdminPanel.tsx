@@ -210,11 +210,11 @@ export default function WhatsAppAdminPanel() {
   );
 
   // Get unique conversations
-  const conversations = [
-    ...new Set(
+  const conversations = Array.from(
+    new Set(
       messages.map((m) => (m.from === config.phoneNumberId ? m.to : m.from))
-    ),
-  ];
+    )
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
