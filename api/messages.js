@@ -1,4 +1,7 @@
 // api/messages.js
+import { getConfig } from './config.js';
+import { createClient } from '@supabase/supabase-js';
+
 export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -14,27 +17,49 @@ export default async function handler(req, res) {
   }
 
   try {
-    // TODO: Connect to your database (MongoDB, PostgreSQL, etc.)
-    // For now, return empty array
-    // In production, fetch messages from your database that n8n stores
+    const config = getConfig();
     
-    const messages = [
-      // Example format:
-      // {
-      //   id: 'msg_123',
-      //   from: '919876543210',
-      //   to: 'your_phone_id',
-      //   text: 'Hello!',
-      //   timestamp: Date.now() / 1000,
-      //   type: 'text',
-      //   status: 'received'
-      // }
-    ];
+    // Check if Supabase is configured
+    if (!config.supabaseUrl || !config.supabaseKey) {
+      console.warn('Supabase not configured, returning empty messages array');
+      return res.status(200).json({ 
+        success: true, 
+        messages: [],
+        count: 0 
+      });
+    }
+
+    // Initialize Supabase client
+    const supabase = createClient(config.supabaseUrl, config.supabaseKey);
+
+    // Fetch messages from Supabase
+    // Assuming table name is 'messages' - adjust if different
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .order('timestamp', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.error('Supabase error:', error);
+      throw new Error(`Database error: ${error.message}`);
+    }
+
+    // Format messages for the frontend
+    const formattedMessages = (messages || []).map((msg) => ({
+      id: msg.id || msg.message_id || `msg_${Date.now()}`,
+      from: msg.from || msg.from_number || msg.phone_number,
+      to: msg.to || msg.to_number || msg.recipient,
+      text: msg.text || msg.body || msg.message || msg.content,
+      timestamp: msg.timestamp || msg.created_at || msg.created_at || Date.now() / 1000,
+      type: msg.type || 'text',
+      status: msg.status || msg.message_status || 'received',
+    }));
 
     return res.status(200).json({ 
       success: true, 
-      messages,
-      count: messages.length 
+      messages: formattedMessages,
+      count: formattedMessages.length 
     });
 
   } catch (error) {

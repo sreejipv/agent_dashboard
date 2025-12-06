@@ -27,6 +27,25 @@ These environment variables **must** be set for the dashboard to function:
 
 These are only needed if you want to fetch stored messages from a database:
 
+### `SUPABASE_URL` (Optional - Recommended)
+- **Description**: Your Supabase project URL for storing/fetching messages
+- **How to get**: 
+  - Go to your Supabase project dashboard
+  - Navigate to Settings → API
+  - Copy the "Project URL"
+- **Used in**: `api/messages.js` (if using Supabase)
+- **Example**: `https://xxxxx.supabase.co`
+
+### `SUPABASE_KEY` (Optional - Recommended)
+- **Description**: Your Supabase anon/service role key (use service role key for server-side)
+- **How to get**: 
+  - Go to your Supabase project dashboard
+  - Navigate to Settings → API
+  - Copy the "service_role" key (for server-side) or "anon" key
+- **Used in**: `api/messages.js` (if using Supabase)
+- **Example**: `sb_secret_XXXXXXXXXXXXXXXX` or `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+- **Note**: For production, use the service role key. For development, anon key works but has RLS restrictions.
+
 ### `MONGODB_URI` (Optional)
 - **Description**: MongoDB connection string for storing/fetching messages
 - **Used in**: `api/messages.js` (if using MongoDB)
@@ -51,6 +70,8 @@ Create a `.env.local` file in the project root:
 ```bash
 WHATSAPP_ACCESS_TOKEN=your_access_token_here
 WHATSAPP_PHONE_ID=your_phone_id_here
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_KEY=sb_secret_XXXXXXXXXXXXXXXX
 ```
 
 ### For Vercel Deployment
@@ -61,7 +82,7 @@ WHATSAPP_PHONE_ID=your_phone_id_here
    - Key: `WHATSAPP_ACCESS_TOKEN`
    - Value: Your access token
    - Environment: Production, Preview, Development (select all)
-4. Repeat for `WHATSAPP_PHONE_ID`
+4. Repeat for `WHATSAPP_PHONE_ID`, `SUPABASE_URL`, and `SUPABASE_KEY`
 5. Click **Save**
 
 ### For Other Platforms

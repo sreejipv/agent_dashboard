@@ -7,6 +7,8 @@ export function getConfig() {
     phoneNumberId: process.env.WHATSAPP_PHONE_ID,
     apiVersion: "v18.0",
     baseUrl: "https://graph.facebook.com",
+    supabaseUrl: process.env.SUPABASE_URL,
+    supabaseKey: process.env.SUPABASE_KEY,
   };
 }
 
