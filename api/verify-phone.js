@@ -1,50 +1,45 @@
+// api/verify-phone.js
 import { validateConfig } from './config.js';
 
 export default async function handler(req, res) {
-  // Only allow GET requests
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'GET') {
-    return res.status(405).json({ 
-      success: false, 
-      error: 'Method not allowed' 
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     const config = validateConfig();
-    
-    // Verify the phone number configuration
+
     const response = await fetch(
-      `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}?fields=verified_name,code_verification_status,quality_rating,messaging_limit_tier`,
+      `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}?fields=verified_name,code_verification_status,quality_rating`,
       {
         headers: {
-          'Authorization': `Bearer ${config.accessToken}`,
-        },
+          'Authorization': `Bearer ${config.accessToken}`
+        }
       }
     );
 
-    const data = await response.json();
-
     if (!response.ok) {
-      return res.status(response.status).json({
-        success: false,
-        error: data.error?.message || `API Error: ${response.status}`,
-      });
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'Failed to verify phone');
     }
 
-    return res.status(200).json({
-      success: true,
-      data: {
-        verified_name: data.verified_name,
-        code_verification_status: data.code_verification_status,
-        quality_rating: data.quality_rating,
-        messaging_limit_tier: data.messaging_limit_tier,
-      },
-    });
+    const data = await response.json();
+    return res.status(200).json({ success: true, data });
+
   } catch (error) {
     console.error('Verify phone error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Internal server error',
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message 
     });
   }
 }
