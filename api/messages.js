@@ -58,22 +58,80 @@ export default async function handler(req, res) {
         timestamp = Date.now() / 1000;
       }
 
-      // Determine if message is sent (from us) or received (from customer)
-      const fromNumber = msg.from || msg.from_number || msg.phone_number || '';
-      const toNumber = msg.to || msg.to_number || msg.recipient || '';
-      const messageText = msg.text || msg.body || msg.message || msg.content || '';
+      // Extract all possible field names for message content
+      // n8n might store it in different fields
+      // Check for nested structure first (from WhatsApp webhook)
+      let messageText = '';
+      if (msg.messages && Array.isArray(msg.messages) && msg.messages[0]) {
+        const firstMsg = msg.messages[0];
+        messageText = firstMsg.text?.body || firstMsg.text || firstMsg.body || '';
+      }
+      // Then check direct fields
+      if (!messageText) {
+        messageText = msg.text || 
+                     msg.body || 
+                     msg.message || 
+                     msg.content || 
+                     msg.message_text ||
+                     '';
+      }
+      
+      // Extract phone numbers - try all possible field variations
+      let fromNumber = '';
+      let toNumber = '';
+      
+      // Check nested structure first
+      if (msg.messages && Array.isArray(msg.messages) && msg.messages[0]) {
+        const firstMsg = msg.messages[0];
+        fromNumber = firstMsg.from || '';
+        toNumber = firstMsg.to || '';
+      }
+      
+      // Then check direct fields
+      if (!fromNumber) {
+        fromNumber = msg.from || 
+                    msg.from_number || 
+                    msg.phone_number || 
+                    msg.sender ||
+                    '';
+      }
+      if (!toNumber) {
+        toNumber = msg.to || 
+                  msg.to_number || 
+                  msg.recipient || 
+                  msg.receiver ||
+                  '';
+      }
+      
+      // Get status
       const messageStatus = msg.status || msg.message_status || 'received';
       
-      // If status is 'sent', it's from us; otherwise it's received
-      const isSent = messageStatus === 'sent' || fromNumber === config.phoneNumberId;
+      // Determine if message is sent (from us) or received (from customer)
+      // Sent messages have status='sent' OR from_number matches our phoneNumberId
+      const isSent = messageStatus === 'sent' || 
+                    fromNumber === config.phoneNumberId ||
+                    (msg.from_number && msg.from_number === config.phoneNumberId);
+      
+      // Debug logging
+      if (!messageText) {
+        console.log('Message with empty text:', {
+          id: msg.id,
+          msg: msg,
+          extractedText: messageText,
+          fromNumber,
+          toNumber,
+          status: messageStatus,
+          isSent
+        });
+      }
 
       return {
         id: msg.id || msg.message_id || `msg_${Date.now()}_${index}`,
-        from: isSent ? config.phoneNumberId : fromNumber,
-        to: isSent ? toNumber : config.phoneNumberId,
+        from: isSent ? config.phoneNumberId : (fromNumber || 'unknown'),
+        to: isSent ? (toNumber || 'unknown') : config.phoneNumberId,
         text: messageText,
         timestamp: timestamp,
-      type: msg.type || 'text',
+        type: msg.type || 'text',
         status: messageStatus,
         isSent: isSent,
       };

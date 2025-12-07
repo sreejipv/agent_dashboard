@@ -64,21 +64,27 @@ export default async function handler(req, res) {
       if (supabaseConfig.supabaseUrl && supabaseConfig.supabaseKey) {
         const supabase = createClient(supabaseConfig.supabaseUrl, supabaseConfig.supabaseKey);
         
-        const { error: dbError } = await supabase
+        const insertData = {
+          message_id: messageId,
+          from_number: config.phoneNumberId, // Your phone number ID
+          to_number: to,
+          text: message,
+          timestamp: Math.floor(Date.now() / 1000),
+          type: 'text',
+          status: 'sent'
+        };
+
+        const { data: insertedData, error: dbError } = await supabase
           .from('messages')
-          .insert({
-            message_id: messageId,
-            from_number: config.phoneNumberId, // Your phone number ID
-            to_number: to,
-            text: message,
-            timestamp: Math.floor(Date.now() / 1000),
-            type: 'text',
-            status: 'sent'
-          });
+          .insert(insertData)
+          .select();
 
         if (dbError) {
           console.error('Error saving message to database:', dbError);
+          console.error('Insert data:', insertData);
           // Don't fail the request if DB save fails
+        } else {
+          console.log('Message saved successfully:', insertedData);
         }
       }
     } catch (dbErr) {

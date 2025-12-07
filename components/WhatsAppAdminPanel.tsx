@@ -17,7 +17,9 @@ interface WhatsAppAdminPanelProps {
   onLogout?: () => void;
 }
 
-export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps = {}) {
+export default function WhatsAppAdminPanel({
+  onLogout,
+}: WhatsAppAdminPanelProps = {}) {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState({
@@ -87,55 +89,62 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
   }, [config]);
 
   // Define refreshMessages before it's used in useEffect
-  const refreshMessages = useCallback(async (silent: boolean = false) => {
-    try {
-      const messagesUrl = config.backendUrl
-        ? `${config.backendUrl}/api/messages`
-        : "/api/messages";
-      const msgResponse = await fetch(messagesUrl);
-      if (msgResponse.ok) {
-        const msgData = await msgResponse.json();
-        if (msgData.success) {
-          const newMessages = msgData.messages || [];
-          
-          setMessages((prevMessages) => {
-            const previousCount = prevMessages.length;
-            
-            // Only show success/error messages if not in silent mode
-            if (!silent) {
-              if (newMessages.length > 0) {
-                setSuccess(`✓ Loaded ${newMessages.length} message(s) from database`);
-                setTimeout(() => setSuccess(""), 3000);
+  const refreshMessages = useCallback(
+    async (silent: boolean = false) => {
+      try {
+        const messagesUrl = config.backendUrl
+          ? `${config.backendUrl}/api/messages`
+          : "/api/messages";
+        const msgResponse = await fetch(messagesUrl);
+        if (msgResponse.ok) {
+          const msgData = await msgResponse.json();
+          if (msgData.success) {
+            const newMessages = msgData.messages || [];
+
+            setMessages((prevMessages) => {
+              const previousCount = prevMessages.length;
+
+              // Only show success/error messages if not in silent mode
+              if (!silent) {
+                if (newMessages.length > 0) {
+                  setSuccess(
+                    `✓ Loaded ${newMessages.length} message(s) from database`
+                  );
+                  setTimeout(() => setSuccess(""), 3000);
+                } else {
+                  setError(
+                    "No messages found in database. Make sure Supabase is configured and messages are being stored."
+                  );
+                  setTimeout(() => setError(""), 5000);
+                }
               } else {
-                setError("No messages found in database. Make sure Supabase is configured and messages are being stored.");
-                setTimeout(() => setError(""), 5000);
+                // Silent mode: only show notification if new messages arrived
+                if (newMessages.length > previousCount) {
+                  const newCount = newMessages.length - previousCount;
+                  setSuccess(`✓ ${newCount} new message(s) received`);
+                  setTimeout(() => setSuccess(""), 3000);
+                }
               }
-            } else {
-              // Silent mode: only show notification if new messages arrived
-              if (newMessages.length > previousCount) {
-                const newCount = newMessages.length - previousCount;
-                setSuccess(`✓ ${newCount} new message(s) received`);
-                setTimeout(() => setSuccess(""), 3000);
-              }
-            }
-            
-            return newMessages;
-          });
+
+              return newMessages;
+            });
+          }
+        } else {
+          const errorData = await msgResponse.json();
+          if (!silent) {
+            throw new Error(errorData.error || "Failed to fetch messages");
+          }
         }
-      } else {
-        const errorData = await msgResponse.json();
+      } catch (err: any) {
+        console.error("Error fetching messages:", err);
         if (!silent) {
-          throw new Error(errorData.error || "Failed to fetch messages");
+          setError(`Failed to load messages: ${err.message}`);
+          setTimeout(() => setError(""), 5000);
         }
       }
-    } catch (err: any) {
-      console.error("Error fetching messages:", err);
-      if (!silent) {
-        setError(`Failed to load messages: ${err.message}`);
-        setTimeout(() => setError(""), 5000);
-      }
-    }
-  }, [config.backendUrl]);
+    },
+    [config.backendUrl]
+  );
 
   // Page Visibility API - detect when tab is visible/hidden
   useEffect(() => {
@@ -254,14 +263,14 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
         throw new Error(data.error || "Failed to send message");
       }
 
-      // Refresh messages to show the sent message from database
       setMessageText("");
       setSuccess("✅ Message sent successfully");
       setTimeout(() => setSuccess(""), 3000);
+
       // Refresh messages after a short delay to ensure DB save is complete
       setTimeout(() => {
         refreshMessages(true);
-      }, 500);
+      }, 1000);
     } catch (err: any) {
       setError(`Failed to send: ${err.message}`);
     } finally {
@@ -310,21 +319,31 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
     const date = new Date(timestamp * 1000);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    
+    const messageDate = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate()
+    );
+
     if (messageDate.getTime() === today.getTime()) {
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     } else if (messageDate.getTime() === today.getTime() - 86400000) {
-      return 'Yesterday';
+      return "Yesterday";
     } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
     }
   };
 
   const formatTime = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    return new Date(timestamp * 1000).toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -339,12 +358,17 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
   const conversationMap = new Map();
   messages.forEach((msg) => {
     const contact = msg.isSent ? msg.to : msg.from;
-    if (!conversationMap.has(contact) || msg.timestamp > conversationMap.get(contact).lastMessageTime) {
+    if (
+      !conversationMap.has(contact) ||
+      msg.timestamp > conversationMap.get(contact).lastMessageTime
+    ) {
       conversationMap.set(contact, {
         phone: contact,
         lastMessage: msg.text,
         lastMessageTime: msg.timestamp,
-        unreadCount: msg.isSent ? 0 : (conversationMap.get(contact)?.unreadCount || 0) + 1,
+        unreadCount: msg.isSent
+          ? 0
+          : (conversationMap.get(contact)?.unreadCount || 0) + 1,
       });
     }
   });
@@ -366,10 +390,12 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
     <div className="h-screen flex flex-col bg-[#e9edef]">
       {/* Top Bar */}
       <div className="bg-[#00a884] h-16 flex items-center justify-between px-4 shadow-md">
-            <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <MessageSquare className="w-8 h-8 text-white" />
-          <h1 className="text-xl font-semibold text-white">WhatsApp Business</h1>
-              </div>
+          <h1 className="text-xl font-semibold text-white">
+            WhatsApp Business
+          </h1>
+        </div>
         <div className="flex items-center gap-2">
           {isPolling && (
             <div className="flex items-center gap-2 px-3 py-1 bg-white/20 rounded-lg">
@@ -377,8 +403,8 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
               <span className="text-sm text-white">Live</span>
             </div>
           )}
-            <button
-              onClick={() => setShowConfig(!showConfig)}
+          <button
+            onClick={() => setShowConfig(!showConfig)}
             className="p-2 hover:bg-white/20 rounded-lg transition-colors"
             title="Settings"
           >
@@ -390,12 +416,12 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
             title="Logout"
           >
             <LogOut className="w-5 h-5 text-white" />
-            </button>
-          </div>
+          </button>
         </div>
+      </div>
 
-        {/* Configuration Panel */}
-        {showConfig && (
+      {/* Configuration Panel */}
+      {showConfig && (
         <div className="absolute top-16 left-0 right-0 bg-white shadow-lg z-50 p-6 border-b">
           <div className="max-w-4xl mx-auto">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
@@ -439,15 +465,19 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
               </button>
             </form>
           </div>
-          </div>
-        )}
+        </div>
+      )}
 
-        {/* Alerts */}
+      {/* Alerts */}
       {(error || success) && (
-        <div className={`px-4 py-2 ${error ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+        <div
+          className={`px-4 py-2 ${
+            error ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+          }`}
+        >
           {error || success}
-          </div>
-        )}
+        </div>
+      )}
 
       {/* Main Content - WhatsApp Style */}
       <div className="flex-1 flex overflow-hidden">
@@ -470,7 +500,7 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
           {/* Conversations List */}
           <div className="flex-1 overflow-y-auto">
             {conversations.map((conv) => (
-                <button
+              <button
                 key={conv.phone}
                 onClick={() => setSelectedConversation(conv.phone)}
                 className={`w-full text-left p-3 hover:bg-[#f5f6f6] border-b border-gray-100 ${
@@ -483,22 +513,28 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <p className="font-medium text-gray-900 truncate">{conv.phone}</p>
-                      <span className="text-xs text-gray-500 ml-2">{formatTime(conv.lastMessageTime)}</span>
+                      <p className="font-medium text-gray-900 truncate">
+                        {conv.phone}
+                      </p>
+                      <span className="text-xs text-gray-500 ml-2">
+                        {formatTime(conv.lastMessageTime)}
+                      </span>
                     </div>
-                    <p className="text-sm text-gray-600 truncate">{conv.lastMessage}</p>
+                    <p className="text-sm text-gray-600 truncate">
+                      {conv.lastMessage}
+                    </p>
                   </div>
-                  </div>
-                </button>
-              ))}
-              {conversations.length === 0 && (
+                </div>
+              </button>
+            ))}
+            {conversations.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p>No conversations yet</p>
               </div>
-              )}
-            </div>
+            )}
           </div>
+        </div>
 
         {/* Right Side - Chat */}
         <div className="flex-1 flex flex-col bg-[#efeae2] bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iYSIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiPjxwYXRoIGQ9Ik0wIDBoMTAwdjEwMEgweiIgZmlsbD0iI2VmZWFlMiIvPjxwYXRoIGQ9Ik0yMCAyMGg2MHY2MEgyMHoiIGZpbGw9IiNkNWQ1ZDUiIG9wYWNpdHk9Ii4wNSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9InVybCgjYSkiLz48L3N2Zz4=')]">
@@ -511,27 +547,31 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
                     <Phone className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">{selectedConversation}</p>
+                    <p className="font-medium text-gray-900">
+                      {selectedConversation}
+                    </p>
                     <p className="text-xs text-gray-600">WhatsApp</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                <button
+                  <button
                     onClick={() => refreshMessages(false)}
                     className="p-2 hover:bg-gray-200 rounded-lg"
                     title="Refresh"
                   >
                     <RefreshCw className="w-5 h-5 text-gray-600" />
-                </button>
+                  </button>
+                </div>
               </div>
-            </div>
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 {conversationMessages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`flex ${msg.isSent ? "justify-end" : "justify-start"}`}
+                    className={`flex ${
+                      msg.isSent ? "justify-end" : "justify-start"
+                    }`}
                   >
                     <div
                       className={`max-w-[65%] rounded-lg px-3 py-2 shadow-sm ${
@@ -540,9 +580,15 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
                           : "bg-white rounded-tl-none"
                       }`}
                     >
-                      <p className="text-gray-900 text-sm whitespace-pre-wrap break-words">
-                        {msg.text}
-                      </p>
+                      {msg.text ? (
+                        <p className="text-gray-900 text-sm whitespace-pre-wrap break-words">
+                          {msg.text}
+                        </p>
+                      ) : (
+                        <p className="text-gray-400 text-sm italic">
+                          (Empty message - check database fields)
+                        </p>
+                      )}
                       <div className="flex items-center justify-end gap-1 mt-1">
                         <span className="text-xs text-gray-500">
                           {formatTime(msg.timestamp)}
@@ -550,8 +596,8 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
                         {msg.isSent && (
                           <span className="text-xs">
                             {msg.status === "sent" ? "✓" : "✓✓"}
-                        </span>
-                      )}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -561,7 +607,7 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
                     <p>No messages in this conversation</p>
                   </div>
                 )}
-        </div>
+              </div>
 
               {/* Message Input */}
               <div className="bg-[#f0f2f5] px-4 py-3 border-t border-gray-300">
@@ -571,7 +617,9 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
                     placeholder="Type a message"
                     value={messageText}
                     onChange={(e) => setMessageText(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+                    onKeyPress={(e) =>
+                      e.key === "Enter" && !e.shiftKey && sendMessage()
+                    }
                     className="flex-1 px-4 py-2 bg-white rounded-lg border-0 focus:ring-0"
                   />
                   <button
@@ -581,15 +629,17 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
                   >
                     <Send className="w-5 h-5" />
                   </button>
-            </div>
-          </div>
+                </div>
+              </div>
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center text-gray-500">
                 <MessageSquare className="w-20 h-20 mx-auto mb-4 opacity-30" />
-                <p className="text-lg">Select a conversation to start messaging</p>
-          </div>
+                <p className="text-lg">
+                  Select a conversation to start messaging
+                </p>
+              </div>
             </div>
           )}
         </div>
