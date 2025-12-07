@@ -86,6 +86,57 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
     }
   }, [config]);
 
+  // Define refreshMessages before it's used in useEffect
+  const refreshMessages = useCallback(async (silent: boolean = false) => {
+    try {
+      const messagesUrl = config.backendUrl
+        ? `${config.backendUrl}/api/messages`
+        : "/api/messages";
+      const msgResponse = await fetch(messagesUrl);
+      if (msgResponse.ok) {
+        const msgData = await msgResponse.json();
+        if (msgData.success) {
+          const newMessages = msgData.messages || [];
+          
+          setMessages((prevMessages) => {
+            const previousCount = prevMessages.length;
+            
+            // Only show success/error messages if not in silent mode
+            if (!silent) {
+              if (newMessages.length > 0) {
+                setSuccess(`✓ Loaded ${newMessages.length} message(s) from database`);
+                setTimeout(() => setSuccess(""), 3000);
+              } else {
+                setError("No messages found in database. Make sure Supabase is configured and messages are being stored.");
+                setTimeout(() => setError(""), 5000);
+              }
+            } else {
+              // Silent mode: only show notification if new messages arrived
+              if (newMessages.length > previousCount) {
+                const newCount = newMessages.length - previousCount;
+                setSuccess(`✓ ${newCount} new message(s) received`);
+                setTimeout(() => setSuccess(""), 3000);
+              }
+            }
+            
+            return newMessages;
+          });
+        }
+      } else {
+        const errorData = await msgResponse.json();
+        if (!silent) {
+          throw new Error(errorData.error || "Failed to fetch messages");
+        }
+      }
+    } catch (err: any) {
+      console.error("Error fetching messages:", err);
+      if (!silent) {
+        setError(`Failed to load messages: ${err.message}`);
+        setTimeout(() => setError(""), 5000);
+      }
+    }
+  }, [config.backendUrl]);
+
   // Page Visibility API - detect when tab is visible/hidden
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -171,56 +222,6 @@ export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps
       setLoading(false);
     }
   };
-
-  const refreshMessages = useCallback(async (silent: boolean = false) => {
-    try {
-      const messagesUrl = config.backendUrl
-        ? `${config.backendUrl}/api/messages`
-        : "/api/messages";
-      const msgResponse = await fetch(messagesUrl);
-      if (msgResponse.ok) {
-        const msgData = await msgResponse.json();
-        if (msgData.success) {
-          const newMessages = msgData.messages || [];
-          
-          setMessages((prevMessages) => {
-            const previousCount = prevMessages.length;
-            
-            // Only show success/error messages if not in silent mode
-            if (!silent) {
-              if (newMessages.length > 0) {
-                setSuccess(`✓ Loaded ${newMessages.length} message(s) from database`);
-                setTimeout(() => setSuccess(""), 3000);
-              } else {
-                setError("No messages found in database. Make sure Supabase is configured and messages are being stored.");
-                setTimeout(() => setError(""), 5000);
-              }
-            } else {
-              // Silent mode: only show notification if new messages arrived
-              if (newMessages.length > previousCount) {
-                const newCount = newMessages.length - previousCount;
-                setSuccess(`✓ ${newCount} new message(s) received`);
-                setTimeout(() => setSuccess(""), 3000);
-              }
-            }
-            
-            return newMessages;
-          });
-        }
-      } else {
-        const errorData = await msgResponse.json();
-        if (!silent) {
-          throw new Error(errorData.error || "Failed to fetch messages");
-        }
-      }
-    } catch (err: any) {
-      console.error("Error fetching messages:", err);
-      if (!silent) {
-        setError(`Failed to load messages: ${err.message}`);
-        setTimeout(() => setError(""), 5000);
-      }
-    }
-  }, [config.backendUrl]);
 
   const sendMessage = async () => {
     if (!messageText.trim() || !selectedConversation) {
