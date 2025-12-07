@@ -1,9 +1,7 @@
 // api/send-message.js
-import { validateConfig, getConfig } from './config.js';
-import { createClient } from '@supabase/supabase-js';
+import { validateConfig } from './config.js';
 
 export default async function handler(req, res) {
-  // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -20,16 +18,20 @@ export default async function handler(req, res) {
     const { to, message } = req.body;
 
     if (!to || !message) {
-      return res.status(400).json({
-        success: false,
+      return res.status(400).json({ 
+        success: false, 
         error: 'Missing required fields: to and message' 
       });
     }
 
     const config = validateConfig();
 
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
     // Send message to WhatsApp
-    const response = await fetch(
+    console.log('Sending WhatsApp message to:', to);
+    const whatsappResponse = await fetch(
       `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`,
       {
         method: 'POST',
@@ -50,58 +52,67 @@ export default async function handler(req, res) {
       }
     );
 
-    if (!response.ok) {
-      const errorData = await response.json();
+    if (!whatsappResponse.ok) {
+      const errorData = await whatsappResponse.json();
+      console.error('WhatsApp API error:', errorData);
       throw new Error(errorData.error?.message || 'Failed to send message');
     }
 
-    const data = await response.json();
-    const messageId = data.messages[0].id;
+    const whatsappData = await whatsappResponse.json();
+    const messageId = whatsappData.messages[0].id;
 
-    // Save message to Supabase
-    try {
-      const supabaseConfig = getConfig();
-      if (supabaseConfig.supabaseUrl && supabaseConfig.supabaseKey) {
-        const supabase = createClient(supabaseConfig.supabaseUrl, supabaseConfig.supabaseKey);
-        
-        const insertData = {
-          message_id: messageId,
-          from_number: config.phoneNumberId, // Your phone number ID
-          to_number: to,
-          text: message,
-          timestamp: Math.floor(Date.now() / 1000),
-          type: 'text',
-          status: 'sent'
-        };
+    console.log('WhatsApp message sent successfully:', messageId);
 
-        const { data: insertedData, error: dbError } = await supabase
-          .from('messages')
-          .insert(insertData)
-          .select();
+    // Store sent message in Supabase
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      console.log('Storing message in database...');
+      
+      const messageRecord = {
+        id: messageId,
+        from_number: config.phoneNumberId,
+        to_number: to,
+        message_text: message,
+        timestamp: Math.floor(Date.now() / 1000),
+        message_type: 'text',
+        status: 'sent',
+        is_sent: true
+      };
 
-        if (dbError) {
-          console.error('Error saving message to database:', dbError);
-          console.error('Insert data:', insertData);
-          // Don't fail the request if DB save fails
-        } else {
-          console.log('Message saved successfully:', insertedData);
+      const storeResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify(messageRecord)
         }
+      );
+
+      if (!storeResponse.ok) {
+        const errorText = await storeResponse.text();
+        console.error('Failed to store in Supabase:', errorText);
+        // Don't fail the request if storage fails, but log it
+      } else {
+        console.log('Message stored in database successfully');
       }
-    } catch (dbErr) {
-      console.error('Database save error:', dbErr);
-      // Continue even if DB save fails
+    } else {
+      console.warn('Supabase not configured - message not stored in database');
     }
 
-    return res.status(200).json({
-      success: true,
-      data,
+    return res.status(200).json({ 
+      success: true, 
+      data: whatsappData,
       messageId: messageId
     });
 
   } catch (error) {
     console.error('Send message error:', error);
-    return res.status(500).json({
-      success: false,
+    return res.status(500).json({ 
+      success: false, 
       error: error.message 
     });
   }

@@ -51,14 +51,14 @@ These are only needed if you want to fetch stored messages from a database:
 - **Example**: `https://xxxxx.supabase.co`
 
 ### `SUPABASE_KEY` (Optional - Recommended)
-- **Description**: Your Supabase anon/service role key (use service role key for server-side)
+- **Description**: Your Supabase anon key (used for REST API calls)
 - **How to get**: 
   - Go to your Supabase project dashboard
   - Navigate to Settings → API
-  - Copy the "service_role" key (for server-side) or "anon" key
-- **Used in**: `api/messages.js` (if using Supabase)
-- **Example**: `sb_secret_XXXXXXXXXXXXXXXX` or `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
-- **Note**: For production, use the service role key. For development, anon key works but has RLS restrictions.
+  - Copy the "anon" key (public key)
+- **Used in**: `api/send-message.js` and `api/messages.js` (if using Supabase)
+- **Example**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+- **Note**: The anon key is used for REST API calls. Make sure your Supabase table has proper RLS policies or use service role key if you need to bypass RLS.
 
 ### `MONGODB_URI` (Optional)
 - **Description**: MongoDB connection string for storing/fetching messages

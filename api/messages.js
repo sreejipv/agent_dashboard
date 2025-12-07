@@ -59,21 +59,19 @@ export default async function handler(req, res) {
       }
 
       // Extract all possible field names for message content
-      // n8n might store it in different fields
-      // Check for nested structure first (from WhatsApp webhook)
-      let messageText = '';
-      if (msg.messages && Array.isArray(msg.messages) && msg.messages[0]) {
+      // Check message_text first (used by send-message.js)
+      // Then check nested structure (from WhatsApp webhook via n8n)
+      // Finally check other direct fields
+      let messageText = msg.message_text || 
+                       msg.text || 
+                       msg.body || 
+                       msg.message || 
+                       msg.content || '';
+      
+      // Check nested structure if direct fields are empty
+      if (!messageText && msg.messages && Array.isArray(msg.messages) && msg.messages[0]) {
         const firstMsg = msg.messages[0];
         messageText = firstMsg.text?.body || firstMsg.text || firstMsg.body || '';
-      }
-      // Then check direct fields
-      if (!messageText) {
-        messageText = msg.text || 
-                     msg.body || 
-                     msg.message || 
-                     msg.content || 
-                     msg.message_text ||
-                     '';
       }
       
       // Extract phone numbers - try all possible field variations
@@ -103,12 +101,14 @@ export default async function handler(req, res) {
                   '';
       }
       
-      // Get status
+      // Get status and type
       const messageStatus = msg.status || msg.message_status || 'received';
+      const messageType = msg.message_type || msg.type || 'text';
       
       // Determine if message is sent (from us) or received (from customer)
-      // Sent messages have status='sent' OR from_number matches our phoneNumberId
-      const isSent = messageStatus === 'sent' || 
+      // Check is_sent flag first (used by send-message.js), then status, then from_number
+      const isSent = msg.is_sent === true || 
+                    messageStatus === 'sent' || 
                     fromNumber === config.phoneNumberId ||
                     (msg.from_number && msg.from_number === config.phoneNumberId);
       
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
         to: isSent ? (toNumber || 'unknown') : config.phoneNumberId,
         text: messageText,
         timestamp: timestamp,
-        type: msg.type || 'text',
+        type: messageType,
         status: messageStatus,
         isSent: isSent,
       };
