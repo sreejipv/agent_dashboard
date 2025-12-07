@@ -11,6 +11,7 @@ import {
   Search,
   Settings,
   LogOut,
+  Bot,
 } from "lucide-react";
 
 interface WhatsAppAdminPanelProps {
@@ -38,6 +39,13 @@ export default function WhatsAppAdminPanel({
   const [success, setSuccess] = useState("");
   const [isPolling, setIsPolling] = useState(false);
   const [isPageVisible, setIsPageVisible] = useState(true);
+  const [notificationPermission, setNotificationPermission] =
+    useState<NotificationPermission>("default");
+  const [previousMessageCount, setPreviousMessageCount] = useState(0);
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+  const [autoReplyMessage, setAutoReplyMessage] = useState(
+    "Thank you for your message! We'll get back to you soon."
+  );
 
   // Load config from localStorage
   useEffect(() => {
@@ -103,6 +111,65 @@ export default function WhatsAppAdminPanel({
 
             setMessages((prevMessages) => {
               const previousCount = prevMessages.length;
+              const newCount = newMessages.length - previousCount;
+
+              // Detect new messages (received messages only)
+              if (newCount > 0 && previousCount > 0) {
+                // Find new received messages
+                const previousMessageIds = new Set(
+                  prevMessages.map((m: any) => m.id)
+                );
+                const newReceivedMessages = newMessages.filter(
+                  (msg: any) => !previousMessageIds.has(msg.id) && !msg.isSent
+                );
+
+                // Show notifications for new received messages
+                if (newReceivedMessages.length > 0) {
+                  newReceivedMessages.forEach((msg: any) => {
+                    const contact = msg.from || "Unknown";
+                    const messageText = msg.text || "New message";
+                    const preview =
+                      messageText.length > 50
+                        ? messageText.substring(0, 50) + "..."
+                        : messageText;
+
+                    // Show browser notification
+                    showNotification(
+                      `New message from ${contact}`,
+                      preview,
+                      contact
+                    );
+                  });
+
+                  // Auto-reply if enabled (send once per unique contact to avoid duplicates)
+                  if (autoReplyEnabled && newReceivedMessages.length > 0) {
+                    const validContacts = newReceivedMessages
+                      .map((msg: any) => msg.from)
+                      .filter(
+                        (contact: string) =>
+                          contact &&
+                          contact !== "Unknown" &&
+                          contact !== "unknown"
+                      ) as string[];
+
+                    // Get unique contacts to avoid sending multiple replies
+                    const uniqueContacts = Array.from(new Set(validContacts));
+                    uniqueContacts.forEach((contact, index) => {
+                      setTimeout(() => {
+                        sendAutoReply(contact, autoReplyMessage);
+                      }, 1000 + index * 2000); // Stagger replies to avoid rate limiting
+                    });
+                  }
+
+                  // Show in-app notification
+                  if (silent) {
+                    setSuccess(
+                      `✓ ${newReceivedMessages.length} new message(s) received`
+                    );
+                    setTimeout(() => setSuccess(""), 3000);
+                  }
+                }
+              }
 
               // Only show success/error messages if not in silent mode
               if (!silent) {
@@ -117,14 +184,10 @@ export default function WhatsAppAdminPanel({
                   );
                   setTimeout(() => setError(""), 5000);
                 }
-              } else {
-                // Silent mode: only show notification if new messages arrived
-                if (newMessages.length > previousCount) {
-                  const newCount = newMessages.length - previousCount;
-                  setSuccess(`✓ ${newCount} new message(s) received`);
-                  setTimeout(() => setSuccess(""), 3000);
-                }
               }
+
+              // Update previous count for next comparison
+              setPreviousMessageCount(newMessages.length);
 
               return newMessages;
             });
@@ -146,6 +209,28 @@ export default function WhatsAppAdminPanel({
     [config.backendUrl]
   );
 
+  // Request notification permission on mount
+  useEffect(() => {
+    if ("Notification" in window) {
+      setNotificationPermission(Notification.permission);
+
+      // Request permission if not already granted or denied
+      if (Notification.permission === "default") {
+        Notification.requestPermission().then((permission) => {
+          setNotificationPermission(permission);
+          if (permission === "granted") {
+            // Show a test notification
+            new Notification("WhatsApp Admin Panel", {
+              body: "Notifications enabled! You'll be notified of new messages.",
+              icon: "/favicon.ico",
+              tag: "notification-enabled",
+            });
+          }
+        });
+      }
+    }
+  }, []);
+
   // Page Visibility API - detect when tab is visible/hidden
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -159,6 +244,31 @@ export default function WhatsAppAdminPanel({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
+
+  // Function to show browser notification
+  const showNotification = (title: string, body: string, contact?: string) => {
+    if ("Notification" in window && notificationPermission === "granted") {
+      // Close any existing notification with the same tag
+      const notification = new Notification(title, {
+        body: body,
+        icon: "/favicon.ico",
+        badge: "/favicon.ico",
+        tag: contact || "new-message",
+        requireInteraction: false,
+      });
+
+      // Auto-close after 5 seconds
+      setTimeout(() => {
+        notification.close();
+      }, 5000);
+
+      // Focus window when notification is clicked
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    }
+  };
 
   // Auto-poll messages when page is visible
   useEffect(() => {
@@ -315,6 +425,63 @@ export default function WhatsAppAdminPanel({
     }
   };
 
+  const sendAutoReply = useCallback(
+    async (to: string, message: string) => {
+      try {
+        const apiUrl = config.backendUrl
+          ? `${config.backendUrl}/api/send-message`
+          : "/api/send-message";
+
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: to,
+            message: message,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          console.log(`Auto-reply sent to ${to}`);
+          // Refresh messages after a delay to show the sent message
+          setTimeout(() => {
+            refreshMessages(true);
+          }, 1000);
+        } else {
+          console.error("Auto-reply failed:", data.error);
+        }
+      } catch (error) {
+        console.error("Auto-reply error:", error);
+      }
+    },
+    [config.backendUrl, refreshMessages]
+  );
+
+  const toggleAutoReply = () => {
+    const newState = !autoReplyEnabled;
+    setAutoReplyEnabled(newState);
+
+    // Save to localStorage
+    localStorage.setItem(
+      "auto-reply-settings",
+      JSON.stringify({
+        enabled: newState,
+        message: autoReplyMessage,
+      })
+    );
+
+    if (newState) {
+      setSuccess("Auto-reply enabled");
+    } else {
+      setSuccess("Auto-reply disabled");
+    }
+    setTimeout(() => setSuccess(""), 3000);
+  };
+
   const formatTimestamp = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
     const now = new Date();
@@ -403,6 +570,50 @@ export default function WhatsAppAdminPanel({
               <span className="text-sm text-white">Live</span>
             </div>
           )}
+          {notificationPermission === "default" && (
+            <button
+              onClick={async () => {
+                if ("Notification" in window) {
+                  const permission = await Notification.requestPermission();
+                  setNotificationPermission(permission);
+                  if (permission === "granted") {
+                    setSuccess("Notifications enabled!");
+                    setTimeout(() => setSuccess(""), 3000);
+                  }
+                }
+              }}
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-sm text-white"
+              title="Enable notifications"
+            >
+              🔔 Enable
+            </button>
+          )}
+          {notificationPermission === "denied" && (
+            <span
+              className="text-xs text-white/70 px-2"
+              title="Notifications blocked by browser"
+            >
+              🔔 Blocked
+            </span>
+          )}
+          <div className="flex items-center gap-2 px-3 py-1 bg-white/10 rounded-lg">
+            <Bot className="w-4 h-4 text-white" />
+            <span className="text-xs text-white">Auto-Reply</span>
+            <button
+              type="button"
+              onClick={toggleAutoReply}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                autoReplyEnabled ? "bg-white/30" : "bg-white/10"
+              }`}
+              title={autoReplyEnabled ? "Auto-reply ON" : "Auto-reply OFF"}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  autoReplyEnabled ? "translate-x-5" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
           <button
             onClick={() => setShowConfig(!showConfig)}
             className="p-2 hover:bg-white/20 rounded-lg transition-colors"
@@ -457,6 +668,59 @@ export default function WhatsAppAdminPanel({
                   placeholder="Leave empty for Vercel"
                 />
               </div>
+
+              {/* Auto-Reply Settings */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-[#00a884]" />
+                    <label className="text-sm font-medium text-gray-700">
+                      Auto-Reply
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleAutoReply}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      autoReplyEnabled ? "bg-[#00a884]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        autoReplyEnabled ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                {autoReplyEnabled && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Auto-Reply Message
+                    </label>
+                    <textarea
+                      value={autoReplyMessage}
+                      onChange={(e) => {
+                        setAutoReplyMessage(e.target.value);
+                        localStorage.setItem(
+                          "auto-reply-settings",
+                          JSON.stringify({
+                            enabled: autoReplyEnabled,
+                            message: e.target.value,
+                          })
+                        );
+                      }}
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00a884] focus:border-transparent"
+                      placeholder="Enter your auto-reply message..."
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      This message will be sent automatically to new incoming
+                      messages.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="submit"
                 className="px-4 py-2 bg-[#00a884] text-white rounded-lg hover:bg-[#008069] transition-colors font-medium"
