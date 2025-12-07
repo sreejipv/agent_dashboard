@@ -1,5 +1,6 @@
 // api/send-message.js
-import { validateConfig } from './config.js';
+import { validateConfig, getConfig } from './config.js';
+import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -19,14 +20,15 @@ export default async function handler(req, res) {
     const { to, message } = req.body;
 
     if (!to || !message) {
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         error: 'Missing required fields: to and message' 
       });
     }
 
     const config = validateConfig();
 
+    // Send message to WhatsApp
     const response = await fetch(
       `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`,
       {
@@ -54,17 +56,46 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
+    const messageId = data.messages[0].id;
 
-    return res.status(200).json({ 
-      success: true, 
+    // Save message to Supabase
+    try {
+      const supabaseConfig = getConfig();
+      if (supabaseConfig.supabaseUrl && supabaseConfig.supabaseKey) {
+        const supabase = createClient(supabaseConfig.supabaseUrl, supabaseConfig.supabaseKey);
+        
+        const { error: dbError } = await supabase
+          .from('messages')
+          .insert({
+            message_id: messageId,
+            from_number: config.phoneNumberId, // Your phone number ID
+            to_number: to,
+            text: message,
+            timestamp: Math.floor(Date.now() / 1000),
+            type: 'text',
+            status: 'sent'
+          });
+
+        if (dbError) {
+          console.error('Error saving message to database:', dbError);
+          // Don't fail the request if DB save fails
+        }
+      }
+    } catch (dbErr) {
+      console.error('Database save error:', dbErr);
+      // Continue even if DB save fails
+    }
+
+    return res.status(200).json({
+      success: true,
       data,
-      messageId: data.messages[0].id
+      messageId: messageId
     });
 
   } catch (error) {
     console.error('Send message error:', error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       error: error.message 
     });
   }

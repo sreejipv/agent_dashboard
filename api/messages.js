@@ -46,39 +46,49 @@ export default async function handler(req, res) {
     }
 
     // Format messages for the frontend
-    const formattedMessages = (messages || []).map((msg) => {
+    const formattedMessages = (messages || []).map((msg, index) => {
       // Handle timestamp - convert Date to Unix timestamp if needed
       let timestamp = msg.timestamp;
       if (!timestamp && msg.created_at) {
         timestamp = typeof msg.created_at === 'string' 
           ? new Date(msg.created_at).getTime() / 1000 
-          : msg.created_at;
+          : (msg.created_at instanceof Date ? msg.created_at.getTime() / 1000 : msg.created_at);
       }
       if (!timestamp) {
         timestamp = Date.now() / 1000;
       }
 
+      // Determine if message is sent (from us) or received (from customer)
+      const fromNumber = msg.from || msg.from_number || msg.phone_number || '';
+      const toNumber = msg.to || msg.to_number || msg.recipient || '';
+      const messageText = msg.text || msg.body || msg.message || msg.content || '';
+      const messageStatus = msg.status || msg.message_status || 'received';
+      
+      // If status is 'sent', it's from us; otherwise it's received
+      const isSent = messageStatus === 'sent' || fromNumber === config.phoneNumberId;
+
       return {
-        id: msg.id || msg.message_id || `msg_${Date.now()}`,
-        from: msg.from || msg.from_number || msg.phone_number,
-        to: msg.to || msg.to_number || msg.recipient,
-        text: msg.text || msg.body || msg.message || msg.content,
+        id: msg.id || msg.message_id || `msg_${Date.now()}_${index}`,
+        from: isSent ? config.phoneNumberId : fromNumber,
+        to: isSent ? toNumber : config.phoneNumberId,
+        text: messageText,
         timestamp: timestamp,
-        type: msg.type || 'text',
-        status: msg.status || msg.message_status || 'received',
+      type: msg.type || 'text',
+        status: messageStatus,
+        isSent: isSent,
       };
     });
 
-    return res.status(200).json({ 
-      success: true, 
+    return res.status(200).json({
+      success: true,
       messages: formattedMessages,
       count: formattedMessages.length 
     });
 
   } catch (error) {
     console.error('Get messages error:', error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       error: error.message 
     });
   }
