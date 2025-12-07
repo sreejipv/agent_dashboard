@@ -46,15 +46,28 @@ export default async function handler(req, res) {
     }
 
     // Format messages for the frontend
-    const formattedMessages = (messages || []).map((msg) => ({
-      id: msg.id || msg.message_id || `msg_${Date.now()}`,
-      from: msg.from || msg.from_number || msg.phone_number,
-      to: msg.to || msg.to_number || msg.recipient,
-      text: msg.text || msg.body || msg.message || msg.content,
-      timestamp: msg.timestamp || msg.created_at || msg.created_at || Date.now() / 1000,
-      type: msg.type || 'text',
-      status: msg.status || msg.message_status || 'received',
-    }));
+    const formattedMessages = (messages || []).map((msg) => {
+      // Handle timestamp - convert Date to Unix timestamp if needed
+      let timestamp = msg.timestamp;
+      if (!timestamp && msg.created_at) {
+        timestamp = typeof msg.created_at === 'string' 
+          ? new Date(msg.created_at).getTime() / 1000 
+          : msg.created_at;
+      }
+      if (!timestamp) {
+        timestamp = Date.now() / 1000;
+      }
+
+      return {
+        id: msg.id || msg.message_id || `msg_${Date.now()}`,
+        from: msg.from || msg.from_number || msg.phone_number,
+        to: msg.to || msg.to_number || msg.recipient,
+        text: msg.text || msg.body || msg.message || msg.content,
+        timestamp: timestamp,
+        type: msg.type || 'text',
+        status: msg.status || msg.message_status || 'received',
+      };
+    });
 
     return res.status(200).json({ 
       success: true, 

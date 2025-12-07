@@ -1,7 +1,7 @@
 "use client";
 
-import WhatsAppAdminPanel from "@/components/WhatsAppAdminPanel";
+import AuthGuard from "@/components/AuthGuard";
 
 export default function Home() {
-  return <WhatsAppAdminPanel />;
+  return <AuthGuard />;
 }

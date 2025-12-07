@@ -1,0 +1,25 @@
+{
+  "name": "Store Message in Supabase",
+  "type": "n8n-nodes-base.supabase",
+  "typeVersion": 1,
+  "position": [-160, 416],
+  "parameters": {
+    "operation": "insert",
+    "table": "messages",
+    "columns": {
+      "message_id": "={{ $json.messages[0].id }}",
+      "from_number": "={{ $json.messages[0].from }}",
+      "to_number": "={{ $json.messages[0].to }}",
+      "text": "={{ $json.messages[0].text?.body || $json.messages[0].text || '' }}",
+      "timestamp": "={{ $json.messages[0].timestamp || Math.floor(Date.now() / 1000) }}",
+      "type": "={{ $json.messages[0].type || 'text' }}",
+      "status": "received"
+    }
+  },
+  "credentials": {
+    "supabaseApi": {
+      "name": "Supabase account"
+    }
+  }
+}
+

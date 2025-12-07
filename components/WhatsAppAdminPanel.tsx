@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Send,
   RefreshCw,
@@ -10,9 +10,14 @@ import {
   Clock,
   Search,
   Settings,
+  LogOut,
 } from "lucide-react";
 
-export default function WhatsAppAdminPanel() {
+interface WhatsAppAdminPanelProps {
+  onLogout?: () => void;
+}
+
+export default function WhatsAppAdminPanel({ onLogout }: WhatsAppAdminPanelProps = {}) {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState({
@@ -29,6 +34,8 @@ export default function WhatsAppAdminPanel() {
   const [messageText, setMessageText] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isPolling, setIsPolling] = useState(false);
+  const [isPageVisible, setIsPageVisible] = useState(true);
 
   // Load config from localStorage
   useEffect(() => {
@@ -79,6 +86,46 @@ export default function WhatsAppAdminPanel() {
     }
   }, [config]);
 
+  // Page Visibility API - detect when tab is visible/hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsPageVisible(!document.hidden);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    setIsPageVisible(!document.hidden);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  // Auto-poll messages when page is visible
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    if (isPageVisible) {
+      // Initial fetch when page becomes visible
+      refreshMessages(true); // true = silent mode (no error messages)
+
+      // Set up polling every 5 seconds
+      pollInterval = setInterval(() => {
+        refreshMessages(true); // Silent mode for auto-polling
+      }, 5000); // Poll every 5 seconds
+
+      setIsPolling(true);
+    } else {
+      setIsPolling(false);
+    }
+
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+      setIsPolling(false);
+    };
+  }, [isPageVisible, refreshMessages]);
+
   const fetchMessages = async () => {
     setLoading(true);
     setError("");
@@ -104,20 +151,7 @@ export default function WhatsAppAdminPanel() {
         );
 
         // Also try to fetch existing messages
-        try {
-          const messagesUrl = config.backendUrl
-            ? `${config.backendUrl}/api/messages`
-            : "/api/messages";
-          const msgResponse = await fetch(messagesUrl);
-          if (msgResponse.ok) {
-            const msgData = await msgResponse.json();
-            if (msgData.success && msgData.messages?.length > 0) {
-              setMessages(msgData.messages);
-            }
-          }
-        } catch (err) {
-          console.log("No stored messages yet");
-        }
+        await refreshMessages();
       } else {
         throw new Error(data.error || "Unknown error");
       }
@@ -137,6 +171,56 @@ export default function WhatsAppAdminPanel() {
       setLoading(false);
     }
   };
+
+  const refreshMessages = useCallback(async (silent: boolean = false) => {
+    try {
+      const messagesUrl = config.backendUrl
+        ? `${config.backendUrl}/api/messages`
+        : "/api/messages";
+      const msgResponse = await fetch(messagesUrl);
+      if (msgResponse.ok) {
+        const msgData = await msgResponse.json();
+        if (msgData.success) {
+          const newMessages = msgData.messages || [];
+          
+          setMessages((prevMessages) => {
+            const previousCount = prevMessages.length;
+            
+            // Only show success/error messages if not in silent mode
+            if (!silent) {
+              if (newMessages.length > 0) {
+                setSuccess(`✓ Loaded ${newMessages.length} message(s) from database`);
+                setTimeout(() => setSuccess(""), 3000);
+              } else {
+                setError("No messages found in database. Make sure Supabase is configured and messages are being stored.");
+                setTimeout(() => setError(""), 5000);
+              }
+            } else {
+              // Silent mode: only show notification if new messages arrived
+              if (newMessages.length > previousCount) {
+                const newCount = newMessages.length - previousCount;
+                setSuccess(`✓ ${newCount} new message(s) received`);
+                setTimeout(() => setSuccess(""), 3000);
+              }
+            }
+            
+            return newMessages;
+          });
+        }
+      } else {
+        const errorData = await msgResponse.json();
+        if (!silent) {
+          throw new Error(errorData.error || "Failed to fetch messages");
+        }
+      }
+    } catch (err: any) {
+      console.error("Error fetching messages:", err);
+      if (!silent) {
+        setError(`Failed to load messages: ${err.message}`);
+        setTimeout(() => setError(""), 5000);
+      }
+    }
+  }, [config.backendUrl]);
 
   const sendMessage = async () => {
     if (!messageText.trim() || !selectedConversation) {
@@ -214,6 +298,20 @@ export default function WhatsAppAdminPanel() {
     setTimeout(() => setSuccess(""), 3000);
   };
 
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+      // Redirect to login
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Force redirect even if API call fails
+      window.location.href = "/";
+    }
+  };
+
   const formatTimestamp = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString();
   };
@@ -247,13 +345,22 @@ export default function WhatsAppAdminPanel() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setShowConfig(!showConfig)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <Settings className="w-5 h-5" />
-              Settings
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowConfig(!showConfig)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <Settings className="w-5 h-5" />
+                Settings
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+                Logout
+              </button>
+            </div>
           </div>
         </div>
 
@@ -373,6 +480,22 @@ export default function WhatsAppAdminPanel() {
                   />
                   {loading ? "Checking..." : "Check API"}
                 </button>
+                <button
+                  onClick={() => refreshMessages(false)}
+                  disabled={loading}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 disabled:bg-gray-400"
+                >
+                  <RefreshCw
+                    className={`w-5 h-5 ${loading ? "animate-spin" : ""}`}
+                  />
+                  Refresh Messages
+                </button>
+                {isPolling && (
+                  <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-sm font-medium">Auto-refreshing...</span>
+                  </div>
+                )}
                 <button
                   onClick={simulateIncomingMessage}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"

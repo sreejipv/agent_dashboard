@@ -6,6 +6,20 @@ This document lists all environment variables needed for the WhatsApp Admin Pane
 
 These environment variables **must** be set for the dashboard to function:
 
+### `ADMIN_PASSWORD`
+- **Description**: Password required to access the admin panel
+- **Security**: Use a strong, unique password
+- **Used in**: `api/auth/login.js` for authentication
+- **Example**: `MySecurePassword123!`
+- **Important**: This password protects your entire admin panel. Keep it secret!
+
+### `JWT_SECRET` (Optional but Recommended)
+- **Description**: Secret key for signing JWT tokens. If not set, `ADMIN_PASSWORD` will be used as fallback
+- **Security**: Use a long, random string (at least 32 characters)
+- **Used in**: `api/auth/login.js` and `api/auth/verify.js`
+- **Example**: `your-super-secret-jwt-key-at-least-32-characters-long`
+- **Note**: Generate a random string: `openssl rand -base64 32`
+
 ### `WHATSAPP_ACCESS_TOKEN`
 - **Description**: Your Meta (Facebook) access token for WhatsApp Business API
 - **How to get**: 
@@ -79,11 +93,15 @@ SUPABASE_KEY=sb_secret_XXXXXXXXXXXXXXXX
 1. Go to your Vercel project dashboard
 2. Navigate to **Settings** → **Environment Variables**
 3. Add each variable:
-   - Key: `WHATSAPP_ACCESS_TOKEN`
-   - Value: Your access token
+   - Key: `ADMIN_PASSWORD`
+   - Value: Your secure password (keep this secret!)
    - Environment: Production, Preview, Development (select all)
-4. Repeat for `WHATSAPP_PHONE_ID`, `SUPABASE_URL`, and `SUPABASE_KEY`
-5. Click **Save**
+4. Add `JWT_SECRET` (optional but recommended - use a random 32+ character string)
+5. Add `WHATSAPP_ACCESS_TOKEN` - Your WhatsApp access token
+6. Add `WHATSAPP_PHONE_ID` - Your WhatsApp phone number ID
+7. Add `SUPABASE_URL` - Your Supabase project URL
+8. Add `SUPABASE_KEY` - Your Supabase service role key
+9. Click **Save** after each addition
 
 ### For Other Platforms
 
@@ -126,4 +144,11 @@ After setting environment variables, you can verify they're working by:
 - Verify your access token is valid and not expired
 - Check that your token has the required permissions
 - Ensure your phone number ID is correct
+
+### Cannot Login / Authentication Fails
+- Verify `ADMIN_PASSWORD` is set in your environment variables
+- Check that you're using the correct password
+- Ensure the environment variable is set in all environments (Production, Preview, Development)
+- Try clearing browser cookies and logging in again
+- Check browser console for any errors
 
