@@ -55,21 +55,59 @@ If you only want to store text messages (after the "Handle Message Types" switch
 1. Add Supabase node after the "Supported" output of "Handle Message Types"
 2. Use the same configuration as above
 
-## Step 2: Update Your Workflow Connections
+## Step 2: Check Auto-Reply Settings (Optional but Recommended)
+
+Before sending automated replies, check if auto-reply is enabled for the contact:
+
+1. **Add HTTP Request Node** (after "Handle Message Types" or before "AI Sales Agent")
+   - Name it: "Check Auto-Reply Settings"
+   - **Method**: GET
+   - **URL**: `https://your-vercel-app.vercel.app/api/conversations/settings?contact={{ $json.messages[0].from }}`
+   - **Authentication**: None (or add headers if needed)
+
+2. **Add IF Node** (after "Check Auto-Reply Settings")
+   - Name it: "Is Auto-Reply Enabled?"
+   - **Condition**: `{{ $json.settings.auto_reply_enabled }}` equals `true`
+   - This will route to two paths:
+     - **True**: Continue to AI Sales Agent (auto-reply is enabled)
+     - **False**: Skip AI Sales Agent (auto-reply is disabled)
+
+3. **Alternative: Use Code Node** (if you prefer)
+   ```javascript
+   // Check if auto-reply is enabled
+   const contact = $input.item.json.messages[0].from;
+   const settingsUrl = `https://your-vercel-app.vercel.app/api/conversations/settings?contact=${contact}`;
+   
+   // Make HTTP request (you can use HTTP Request node instead)
+   const response = await fetch(settingsUrl);
+   const data = await response.json();
+   
+   return {
+     auto_reply_enabled: data.settings?.auto_reply_enabled || false,
+     auto_reply_message: data.settings?.auto_reply_message || '',
+     ...$input.item.json
+   };
+   ```
+
+## Step 3: Update Your Workflow Connections
 
 Your workflow should look like this:
 
 ```
 WhatsApp Trigger
     ↓
-Store Message in Supabase (NEW)
+Store Message in Supabase
     ↓
 Handle Message Types
-    ├─→ Supported → AI Sales Agent → Reply To User
-    └─→ Not Supported → Reply To User1
+    ↓
+Check Auto-Reply Settings (NEW)
+    ↓
+Is Auto-Reply Enabled? (NEW)
+    ├─ Yes → AI Sales Agent → Reply To User
+    └─ No → End (skip auto-reply)
 ```
 
-## Step 3: Field Mapping Reference
+## Step 4: Field Mapping Reference
 
 Here's the exact field mapping for the Supabase Insert node:
 
@@ -83,7 +121,26 @@ Here's the exact field mapping for the Supabase Insert node:
 | `type` | `={{ $json.messages[0].type || 'text' }}` | Message type |
 | `status` | `received` | Message status |
 
-## Step 4: Also Store Outgoing Messages (Optional)
+## Step 5: Use Auto-Reply Message (Optional)
+
+If you want to use the configured auto-reply message instead of AI-generated responses:
+
+1. In your "AI Sales Agent" node or "Reply To User" node, you can access:
+   - `{{ $json.settings.auto_reply_message }}` - The configured auto-reply message
+   - Or use it as a fallback if AI doesn't generate a response
+
+2. Example in Code Node:
+   ```javascript
+   const aiResponse = $input.item.json.aiResponse; // Your AI response
+   const autoReplyMessage = $input.item.json.settings?.auto_reply_message;
+   
+   return {
+     message: aiResponse || autoReplyMessage || 'Thank you for your message!',
+     ...$input.item.json
+   };
+   ```
+
+## Step 6: Also Store Outgoing Messages (Optional)
 
 To also store messages you send (from "Reply To User" node):
 
@@ -102,7 +159,7 @@ To also store messages you send (from "Reply To User" node):
 }
 ```
 
-## Step 5: Test Your Integration
+## Step 7: Test Your Integration
 
 1. **Activate your workflow** in n8n
 2. **Send a test message** to your WhatsApp number
@@ -168,14 +225,18 @@ Here's a JSON snippet you can use for the Supabase Insert node:
 ## Quick Setup Checklist
 
 - [ ] Supabase table `messages` created (see `SUPABASE_SETUP.md`)
+- [ ] Supabase table `conversations` created (see `CONVERSATIONS_TABLE_SETUP.md`)
 - [ ] Supabase credentials added to n8n
 - [ ] Supabase Insert node added to workflow
+- [ ] HTTP Request node added to check auto-reply settings (optional)
+- [ ] IF node added to route based on auto-reply status (optional)
 - [ ] Field mappings configured correctly
 - [ ] Workflow connections updated
 - [ ] Workflow activated
 - [ ] Test message sent
 - [ ] Message appears in Supabase table
 - [ ] Message appears in admin panel
+- [ ] Auto-reply settings work per conversation
 
 ## Next Steps
 

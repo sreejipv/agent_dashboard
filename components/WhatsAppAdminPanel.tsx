@@ -42,10 +42,15 @@ export default function WhatsAppAdminPanel({
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission>("default");
   const [previousMessageCount, setPreviousMessageCount] = useState(0);
-  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
-  const [autoReplyMessage, setAutoReplyMessage] = useState(
-    "Thank you for your message! We'll get back to you soon."
-  );
+  const [conversationSettings, setConversationSettings] = useState<
+    Record<
+      string,
+      {
+        auto_reply_enabled: boolean;
+        auto_reply_message: string;
+      }
+    >
+  >({});
 
   // Load config from localStorage
   useEffect(() => {
@@ -141,8 +146,9 @@ export default function WhatsAppAdminPanel({
                     );
                   });
 
-                  // Auto-reply if enabled (send once per unique contact to avoid duplicates)
-                  if (autoReplyEnabled && newReceivedMessages.length > 0) {
+                  // Auto-reply if enabled for each contact (check per-contact settings)
+                  // Note: We need to fetch settings for contacts that don't have them loaded yet
+                  if (newReceivedMessages.length > 0) {
                     const validContacts = newReceivedMessages
                       .map((msg: any) => msg.from)
                       .filter(
@@ -155,9 +161,21 @@ export default function WhatsAppAdminPanel({
                     // Get unique contacts to avoid sending multiple replies
                     const uniqueContacts = Array.from(new Set(validContacts));
                     uniqueContacts.forEach((contact, index) => {
-                      setTimeout(() => {
-                        sendAutoReply(contact, autoReplyMessage);
-                      }, 1000 + index * 2000); // Stagger replies to avoid rate limiting
+                      // Check if auto-reply is enabled for this specific contact
+                      const contactSettings = conversationSettings[contact] || {
+                        auto_reply_enabled: false,
+                        auto_reply_message:
+                          "Thank you for your message! We'll get back to you soon.",
+                      };
+
+                      if (contactSettings.auto_reply_enabled) {
+                        setTimeout(() => {
+                          sendAutoReply(
+                            contact,
+                            contactSettings.auto_reply_message
+                          );
+                        }, 1000 + index * 2000); // Stagger replies to avoid rate limiting
+                      }
                     });
                   }
 
@@ -206,7 +224,7 @@ export default function WhatsAppAdminPanel({
         }
       }
     },
-    [config.backendUrl]
+    [config.backendUrl, conversationSettings]
   );
 
   // Request notification permission on mount
@@ -461,25 +479,132 @@ export default function WhatsAppAdminPanel({
     [config.backendUrl, refreshMessages]
   );
 
-  const toggleAutoReply = () => {
-    const newState = !autoReplyEnabled;
-    setAutoReplyEnabled(newState);
+  // Load conversation settings when a conversation is selected
+  useEffect(() => {
+    if (selectedConversation) {
+      const loadSettings = async () => {
+        try {
+          const apiUrl = config.backendUrl
+            ? `${config.backendUrl}/api/conversations/settings`
+            : "/api/conversations/settings";
 
-    // Save to localStorage
-    localStorage.setItem(
-      "auto-reply-settings",
-      JSON.stringify({
-        enabled: newState,
-        message: autoReplyMessage,
-      })
-    );
+          const response = await fetch(
+            `${apiUrl}?contact=${encodeURIComponent(selectedConversation)}`
+          );
 
-    if (newState) {
-      setSuccess("Auto-reply enabled");
-    } else {
-      setSuccess("Auto-reply disabled");
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              setConversationSettings((prev) => ({
+                ...prev,
+                [selectedConversation]: data.settings,
+              }));
+            }
+          }
+        } catch (error) {
+          console.error("Error loading conversation settings:", error);
+        }
+      };
+
+      loadSettings();
     }
-    setTimeout(() => setSuccess(""), 3000);
+  }, [selectedConversation, config.backendUrl]);
+
+  const toggleAutoReply = async (contact: string) => {
+    if (!contact) return;
+
+    const currentSettings = conversationSettings[contact] || {
+      auto_reply_enabled: false,
+      auto_reply_message:
+        "Thank you for your message! We'll get back to you soon.",
+    };
+
+    const newState = !currentSettings.auto_reply_enabled;
+
+    try {
+      const apiUrl = config.backendUrl
+        ? `${config.backendUrl}/api/conversations/settings`
+        : "/api/conversations/settings";
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          phone_number: contact,
+          auto_reply_enabled: newState,
+          auto_reply_message: currentSettings.auto_reply_message,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Update local state
+        setConversationSettings((prev) => ({
+          ...prev,
+          [contact]: {
+            auto_reply_enabled: newState,
+            auto_reply_message: currentSettings.auto_reply_message,
+          },
+        }));
+
+        if (newState) {
+          setSuccess(`Auto-reply enabled for ${contact}`);
+        } else {
+          setSuccess(`Auto-reply disabled for ${contact}`);
+        }
+        setTimeout(() => setSuccess(""), 3000);
+      } else {
+        throw new Error(data.error || "Failed to update settings");
+      }
+    } catch (error: any) {
+      setError(`Failed to update auto-reply: ${error.message}`);
+      setTimeout(() => setError(""), 5000);
+    }
+  };
+
+  const updateAutoReplyMessage = async (contact: string, message: string) => {
+    if (!contact) return;
+
+    try {
+      const apiUrl = config.backendUrl
+        ? `${config.backendUrl}/api/conversations/settings`
+        : "/api/conversations/settings";
+
+      const currentSettings = conversationSettings[contact] || {
+        auto_reply_enabled: false,
+        auto_reply_message:
+          "Thank you for your message! We'll get back to you soon.",
+      };
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          phone_number: contact,
+          auto_reply_enabled: currentSettings.auto_reply_enabled,
+          auto_reply_message: message,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setConversationSettings((prev) => ({
+          ...prev,
+          [contact]: {
+            auto_reply_enabled: currentSettings.auto_reply_enabled,
+            auto_reply_message: message,
+          },
+        }));
+      }
+    } catch (error) {
+      console.error("Error updating auto-reply message:", error);
+    }
   };
 
   const formatTimestamp = (timestamp: number) => {
@@ -596,24 +721,6 @@ export default function WhatsAppAdminPanel({
               🔔 Blocked
             </span>
           )}
-          <div className="flex items-center gap-2 px-3 py-1 bg-white/10 rounded-lg">
-            <Bot className="w-4 h-4 text-white" />
-            <span className="text-xs text-white">Auto-Reply</span>
-            <button
-              type="button"
-              onClick={toggleAutoReply}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                autoReplyEnabled ? "bg-white/30" : "bg-white/10"
-              }`}
-              title={autoReplyEnabled ? "Auto-reply ON" : "Auto-reply OFF"}
-            >
-              <span
-                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                  autoReplyEnabled ? "translate-x-5" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
           <button
             onClick={() => setShowConfig(!showConfig)}
             className="p-2 hover:bg-white/20 rounded-lg transition-colors"
@@ -669,57 +776,10 @@ export default function WhatsAppAdminPanel({
                 />
               </div>
 
-              {/* Auto-Reply Settings */}
-              <div className="border-t pt-4 mt-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Bot className="w-5 h-5 text-[#00a884]" />
-                    <label className="text-sm font-medium text-gray-700">
-                      Auto-Reply
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleAutoReply}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      autoReplyEnabled ? "bg-[#00a884]" : "bg-gray-300"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        autoReplyEnabled ? "translate-x-6" : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-                {autoReplyEnabled && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Auto-Reply Message
-                    </label>
-                    <textarea
-                      value={autoReplyMessage}
-                      onChange={(e) => {
-                        setAutoReplyMessage(e.target.value);
-                        localStorage.setItem(
-                          "auto-reply-settings",
-                          JSON.stringify({
-                            enabled: autoReplyEnabled,
-                            message: e.target.value,
-                          })
-                        );
-                      }}
-                      rows={3}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00a884] focus:border-transparent"
-                      placeholder="Enter your auto-reply message..."
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      This message will be sent automatically to new incoming
-                      messages.
-                    </p>
-                  </div>
-                )}
-              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Note: Auto-reply settings are configured per conversation in the
+                chat header.
+              </p>
 
               <button
                 type="submit"
@@ -818,6 +878,36 @@ export default function WhatsAppAdminPanel({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Auto-Reply Toggle for this conversation */}
+                  <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-lg border border-gray-300">
+                    <Bot className="w-4 h-4 text-gray-600" />
+                    <span className="text-xs text-gray-700">Auto-Reply</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleAutoReply(selectedConversation)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        conversationSettings[selectedConversation]
+                          ?.auto_reply_enabled
+                          ? "bg-[#00a884]"
+                          : "bg-gray-300"
+                      }`}
+                      title={
+                        conversationSettings[selectedConversation]
+                          ?.auto_reply_enabled
+                          ? "Auto-reply ON"
+                          : "Auto-reply OFF"
+                      }
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                          conversationSettings[selectedConversation]
+                            ?.auto_reply_enabled
+                            ? "translate-x-5"
+                            : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
                   <button
                     onClick={() => refreshMessages(false)}
                     className="p-2 hover:bg-gray-200 rounded-lg"
@@ -827,6 +917,35 @@ export default function WhatsAppAdminPanel({
                   </button>
                 </div>
               </div>
+
+              {/* Auto-Reply Message Configuration (shown when enabled) */}
+              {conversationSettings[selectedConversation]
+                ?.auto_reply_enabled && (
+                <div className="bg-white border-b border-gray-200 px-4 py-3">
+                  <label className="block text-xs font-medium text-gray-700 mb-2">
+                    Auto-Reply Message
+                  </label>
+                  <textarea
+                    value={
+                      conversationSettings[selectedConversation]
+                        ?.auto_reply_message || ""
+                    }
+                    onChange={(e) =>
+                      updateAutoReplyMessage(
+                        selectedConversation,
+                        e.target.value
+                      )
+                    }
+                    rows={2}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00a884] focus:border-transparent"
+                    placeholder="Enter your auto-reply message..."
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    This message will be sent automatically to new messages from
+                    this contact.
+                  </p>
+                </div>
+              )}
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
