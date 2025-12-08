@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Send,
   RefreshCw,
@@ -93,9 +93,19 @@ export default function WhatsAppAdminPanel({
     }
   }, [config]);
 
+  // Track if a refresh is in progress to prevent concurrent requests (use ref to avoid dependency issues)
+  const isRefreshingRef = useRef(false);
+
   // Define refreshMessages before it's used in useEffect
   const refreshMessages = useCallback(
     async (silent: boolean = false): Promise<void> => {
+      // Prevent concurrent refresh calls
+      if (isRefreshingRef.current) {
+        console.log("Refresh already in progress, skipping...");
+        return;
+      }
+
+      isRefreshingRef.current = true;
       try {
         const messagesUrl = config.backendUrl
           ? `${config.backendUrl}/api/messages`
@@ -190,6 +200,8 @@ export default function WhatsAppAdminPanel({
           setError(`Failed to load messages: ${err.message}`);
           setTimeout(() => setError(""), 5000);
         }
+      } finally {
+        isRefreshingRef.current = false;
       }
     },
     [config.backendUrl]
@@ -266,7 +278,10 @@ export default function WhatsAppAdminPanel({
 
       // Set up polling every 5 seconds
       pollInterval = setInterval(() => {
-        refreshMessages(true); // Silent mode for auto-polling
+        // Only poll if not currently refreshing
+        if (!isRefreshingRef.current) {
+          refreshMessages(true); // Silent mode for auto-polling
+        }
       }, 5000); // Poll every 5 seconds
 
       setIsPolling(true);
@@ -334,6 +349,12 @@ export default function WhatsAppAdminPanel({
       return;
     }
 
+    // Prevent multiple simultaneous sends
+    if (loading) {
+      console.log("Message send already in progress, skipping...");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -363,10 +384,13 @@ export default function WhatsAppAdminPanel({
       setSuccess("✅ Message sent successfully");
       setTimeout(() => setSuccess(""), 3000);
 
-      // Refresh messages after a short delay to ensure DB save is complete
+      // Refresh messages after a delay to ensure DB save is complete
+      // Only refresh if not already refreshing
       setTimeout(() => {
-        refreshMessages(true);
-      }, 1000);
+        if (!isRefreshingRef.current) {
+          refreshMessages(true);
+        }
+      }, 1500);
     } catch (err: any) {
       setError(`Failed to send: ${err.message}`);
     } finally {
