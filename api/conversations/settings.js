@@ -163,9 +163,21 @@ export default async function handler(req, res) {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Failed to save conversation settings:', response.status, errorText);
+        
+        // Check if table doesn't exist
+        let errorMessage = `Failed to save settings: ${errorText}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.message && errorJson.message.includes("Could not find the table")) {
+            errorMessage = `Database table 'conversations' does not exist. Please create it in Supabase. See CONVERSATIONS_TABLE_SETUP.md or run the SQL in create_conversations_table.sql`;
+          }
+        } catch (e) {
+          // Error text is not JSON, use as is
+        }
+        
         return res.status(500).json({
           success: false,
-          error: `Failed to save settings: ${errorText}`,
+          error: errorMessage,
         });
       }
 

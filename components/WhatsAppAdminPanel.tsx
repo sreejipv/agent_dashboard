@@ -42,15 +42,7 @@ export default function WhatsAppAdminPanel({
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission>("default");
   const [previousMessageCount, setPreviousMessageCount] = useState(0);
-  const [conversationSettings, setConversationSettings] = useState<
-    Record<
-      string,
-      {
-        auto_reply_enabled: boolean;
-        auto_reply_message: string;
-      }
-    >
-  >({});
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 
   // Load config from localStorage
   useEffect(() => {
@@ -157,75 +149,9 @@ export default function WhatsAppAdminPanel({
                       contact && contact !== "Unknown" && contact !== "unknown"
                   ) as string[];
 
-                // Get unique contacts to avoid sending multiple replies
-                const uniqueContacts = Array.from(new Set(validContacts));
-
-                // Fetch settings for all contacts that don't have them cached
-                const contactsNeedingSettings = uniqueContacts.filter(
-                  (contact) => !conversationSettings[contact]
-                );
-
-                // Load settings for contacts that aren't in cache
-                let updatedSettings = { ...conversationSettings };
-                if (contactsNeedingSettings.length > 0) {
-                  const settingsPromises = contactsNeedingSettings.map(
-                    async (contact) => {
-                      try {
-                        const apiUrl = config.backendUrl
-                          ? `${config.backendUrl}/api/conversations/settings`
-                          : "/api/conversations/settings";
-                        const response = await fetch(
-                          `${apiUrl}?contact=${encodeURIComponent(contact)}`
-                        );
-                        if (response.ok) {
-                          const data = await response.json();
-                          if (data.success) {
-                            return { contact, settings: data.settings };
-                          }
-                        }
-                      } catch (error) {
-                        console.error(
-                          `Error fetching settings for ${contact}:`,
-                          error
-                        );
-                      }
-                      return null;
-                    }
-                  );
-
-                  const settingsResults = await Promise.all(settingsPromises);
-                  settingsResults.forEach((result) => {
-                    if (result) {
-                      updatedSettings[result.contact] = result.settings;
-                    }
-                  });
-
-                  // Update state with all fetched settings at once
-                  if (settingsResults.some((r) => r !== null)) {
-                    setConversationSettings(updatedSettings);
-                  }
-                }
-
-                // Now check settings and send auto-replies
-                // Use updatedSettings which includes freshly fetched settings
-                for (let index = 0; index < uniqueContacts.length; index++) {
-                  const contact = uniqueContacts[index];
-                  // Get settings from updated cache or use defaults
-                  const contactSettings = updatedSettings[contact] || {
-                    auto_reply_enabled: false,
-                    auto_reply_message:
-                      "Thank you for your message! We'll get back to you soon.",
-                  };
-
-                  if (contactSettings.auto_reply_enabled) {
-                    setTimeout(() => {
-                      sendAutoReply(
-                        contact,
-                        contactSettings.auto_reply_message
-                      );
-                    }, 1000 + index * 2000); // Stagger replies to avoid rate limiting
-                  }
-                }
+                // Note: Auto-reply is now handled by n8n workflow
+                // The workflow checks /api/auto-reply-status and only sends AI replies if enabled
+                // No need to send auto-replies from the frontend anymore
 
                 // Show in-app notification
                 if (silent) {
@@ -266,7 +192,7 @@ export default function WhatsAppAdminPanel({
         }
       }
     },
-    [config.backendUrl, conversationSettings]
+    [config.backendUrl]
   );
 
   // Request notification permission on mount
@@ -485,115 +411,34 @@ export default function WhatsAppAdminPanel({
     }
   };
 
-  const sendAutoReply = useCallback(
-    async (to: string, message: string) => {
+  // Load global auto-reply status on mount
+  useEffect(() => {
+    const loadAutoReplyStatus = async () => {
       try {
         const apiUrl = config.backendUrl
-          ? `${config.backendUrl}/api/send-message`
-          : "/api/send-message";
+          ? `${config.backendUrl}/api/auto-reply-status`
+          : "/api/auto-reply-status";
 
-        const response = await fetch(apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            to: to,
-            message: message,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          console.log(`Auto-reply sent to ${to}`);
-          // Refresh messages after a delay to show the sent message
-          setTimeout(() => {
-            refreshMessages(true);
-          }, 1000);
-        } else {
-          console.error("Auto-reply failed:", data.error);
+        const response = await fetch(apiUrl);
+        if (response.ok) {
+          const data = await response.json();
+          setAutoReplyEnabled(data.enabled || false);
         }
       } catch (error) {
-        console.error("Auto-reply error:", error);
+        console.error("Error loading auto-reply status:", error);
       }
-    },
-    [config.backendUrl, refreshMessages]
-  );
-
-  // Load conversation settings when a conversation is selected
-  useEffect(() => {
-    if (selectedConversation) {
-      const loadSettings = async () => {
-        try {
-          const apiUrl = config.backendUrl
-            ? `${config.backendUrl}/api/conversations/settings`
-            : "/api/conversations/settings";
-
-          const url = `${apiUrl}?contact=${encodeURIComponent(
-            selectedConversation
-          )}`;
-          console.log(
-            "Loading settings for conversation:",
-            selectedConversation
-          );
-          console.log("API URL:", url);
-
-          const response = await fetch(url);
-
-          console.log("Load settings response status:", response.status);
-          if (response.ok) {
-            const data = await response.json();
-            console.log("Load settings response data:", data);
-            if (data.success) {
-              setConversationSettings((prev) => ({
-                ...prev,
-                [selectedConversation]: data.settings,
-              }));
-              console.log("Settings loaded:", data.settings);
-            }
-          } else {
-            const errorText = await response.text();
-            console.error("Failed to load settings:", errorText);
-          }
-        } catch (error) {
-          console.error("Error loading conversation settings:", error);
-        }
-      };
-
-      loadSettings();
-    }
-  }, [selectedConversation, config.backendUrl]);
-
-  const toggleAutoReply = async (contact: string) => {
-    if (!contact) {
-      console.error("toggleAutoReply: No contact provided");
-      return;
-    }
-
-    console.log("toggleAutoReply called for contact:", contact);
-    console.log("Current conversationSettings:", conversationSettings);
-
-    const currentSettings = conversationSettings[contact] || {
-      auto_reply_enabled: false,
-      auto_reply_message:
-        "Thank you for your message! We'll get back to you soon.",
     };
 
-    const newState = !currentSettings.auto_reply_enabled;
-    console.log("Toggling auto-reply to:", newState);
+    loadAutoReplyStatus();
+  }, [config.backendUrl]);
+
+  const toggleAutoReply = async () => {
+    const newState = !autoReplyEnabled;
 
     try {
       const apiUrl = config.backendUrl
-        ? `${config.backendUrl}/api/conversations/settings`
-        : "/api/conversations/settings";
-
-      console.log("Calling API:", apiUrl);
-      console.log("Request body:", {
-        phone_number: contact,
-        auto_reply_enabled: newState,
-        auto_reply_message: currentSettings.auto_reply_message,
-      });
+        ? `${config.backendUrl}/api/auto-reply-status`
+        : "/api/auto-reply-status";
 
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -601,83 +446,27 @@ export default function WhatsAppAdminPanel({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          phone_number: contact,
-          auto_reply_enabled: newState,
-          auto_reply_message: currentSettings.auto_reply_message,
+          enabled: newState,
         }),
       });
 
-      console.log("API Response status:", response.status);
       const data = await response.json();
-      console.log("API Response data:", data);
 
       if (response.ok && data.success) {
-        // Update local state
-        setConversationSettings((prev) => ({
-          ...prev,
-          [contact]: {
-            auto_reply_enabled: newState,
-            auto_reply_message: currentSettings.auto_reply_message,
-          },
-        }));
-
-        console.log("Settings updated successfully");
-
+        setAutoReplyEnabled(newState);
         if (newState) {
-          setSuccess(`Auto-reply enabled for ${contact}`);
+          setSuccess("AI Auto-Reply enabled");
         } else {
-          setSuccess(`Auto-reply disabled for ${contact}`);
+          setSuccess("AI Auto-Reply disabled - You'll reply manually");
         }
         setTimeout(() => setSuccess(""), 3000);
       } else {
-        throw new Error(data.error || "Failed to update settings");
+        throw new Error(data.error || "Failed to update auto-reply status");
       }
     } catch (error: any) {
       console.error("Error in toggleAutoReply:", error);
       setError(`Failed to update auto-reply: ${error.message}`);
       setTimeout(() => setError(""), 5000);
-    }
-  };
-
-  const updateAutoReplyMessage = async (contact: string, message: string) => {
-    if (!contact) return;
-
-    try {
-      const apiUrl = config.backendUrl
-        ? `${config.backendUrl}/api/conversations/settings`
-        : "/api/conversations/settings";
-
-      const currentSettings = conversationSettings[contact] || {
-        auto_reply_enabled: false,
-        auto_reply_message:
-          "Thank you for your message! We'll get back to you soon.",
-      };
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          phone_number: contact,
-          auto_reply_enabled: currentSettings.auto_reply_enabled,
-          auto_reply_message: message,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setConversationSettings((prev) => ({
-          ...prev,
-          [contact]: {
-            auto_reply_enabled: currentSettings.auto_reply_enabled,
-            auto_reply_message: message,
-          },
-        }));
-      }
-    } catch (error) {
-      console.error("Error updating auto-reply message:", error);
     }
   };
 
@@ -795,6 +584,27 @@ export default function WhatsAppAdminPanel({
               🔔 Blocked
             </span>
           )}
+          {/* Global AI Auto-Reply Toggle */}
+          <div className="flex items-center gap-2 px-3 py-1 bg-white/10 rounded-lg">
+            <Bot className="w-4 h-4 text-white" />
+            <span className="text-xs text-white">AI</span>
+            <button
+              type="button"
+              onClick={toggleAutoReply}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                autoReplyEnabled ? "bg-white/30" : "bg-white/10"
+              }`}
+              title={
+                autoReplyEnabled ? "AI Auto-Reply ON" : "AI Auto-Reply OFF"
+              }
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  autoReplyEnabled ? "translate-x-5" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
           <button
             onClick={() => setShowConfig(!showConfig)}
             className="p-2 hover:bg-white/20 rounded-lg transition-colors"
@@ -850,10 +660,34 @@ export default function WhatsAppAdminPanel({
                 />
               </div>
 
-              <p className="text-xs text-gray-500 mt-2">
-                Note: Auto-reply settings are configured per conversation in the
-                chat header.
-              </p>
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-[#00a884]" />
+                    <label className="text-sm font-medium text-gray-700">
+                      AI Auto-Reply
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleAutoReply}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      autoReplyEnabled ? "bg-[#00a884]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        autoReplyEnabled ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {autoReplyEnabled
+                    ? "AI will automatically reply to incoming messages via n8n workflow"
+                    : "AI is disabled - You'll reply manually from the dashboard"}
+                </p>
+              </div>
 
               <button
                 type="submit"
@@ -952,44 +786,6 @@ export default function WhatsAppAdminPanel({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Auto-Reply Toggle for this conversation */}
-                  <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-lg border border-gray-300">
-                    <Bot className="w-4 h-4 text-gray-600" />
-                    <span className="text-xs text-gray-700">Auto-Reply</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log(
-                          "Toggle button clicked for:",
-                          selectedConversation
-                        );
-                        toggleAutoReply(selectedConversation);
-                      }}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                        conversationSettings[selectedConversation]
-                          ?.auto_reply_enabled
-                          ? "bg-[#00a884]"
-                          : "bg-gray-300"
-                      }`}
-                      title={
-                        conversationSettings[selectedConversation]
-                          ?.auto_reply_enabled
-                          ? "Auto-reply ON"
-                          : "Auto-reply OFF"
-                      }
-                    >
-                      <span
-                        className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                          conversationSettings[selectedConversation]
-                            ?.auto_reply_enabled
-                            ? "translate-x-5"
-                            : "translate-x-1"
-                        }`}
-                      />
-                    </button>
-                  </div>
                   <button
                     onClick={() => refreshMessages(false)}
                     className="p-2 hover:bg-gray-200 rounded-lg"
@@ -999,35 +795,6 @@ export default function WhatsAppAdminPanel({
                   </button>
                 </div>
               </div>
-
-              {/* Auto-Reply Message Configuration (shown when enabled) */}
-              {conversationSettings[selectedConversation]
-                ?.auto_reply_enabled && (
-                <div className="bg-white border-b border-gray-200 px-4 py-3">
-                  <label className="block text-xs font-medium text-gray-700 mb-2">
-                    Auto-Reply Message
-                  </label>
-                  <textarea
-                    value={
-                      conversationSettings[selectedConversation]
-                        ?.auto_reply_message || ""
-                    }
-                    onChange={(e) =>
-                      updateAutoReplyMessage(
-                        selectedConversation,
-                        e.target.value
-                      )
-                    }
-                    rows={2}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00a884] focus:border-transparent"
-                    placeholder="Enter your auto-reply message..."
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    This message will be sent automatically to new messages from
-                    this contact.
-                  </p>
-                </div>
-              )}
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
