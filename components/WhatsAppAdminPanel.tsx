@@ -103,7 +103,7 @@ export default function WhatsAppAdminPanel({
 
   // Define refreshMessages before it's used in useEffect
   const refreshMessages = useCallback(
-    async (silent: boolean = false) => {
+    async (silent: boolean = false): Promise<void> => {
       try {
         const messagesUrl = config.backendUrl
           ? `${config.backendUrl}/api/messages`
@@ -113,102 +113,144 @@ export default function WhatsAppAdminPanel({
           const msgData = await msgResponse.json();
           if (msgData.success) {
             const newMessages = msgData.messages || [];
+            const previousCount = messages.length;
+            const newCount = newMessages.length - previousCount;
 
-            setMessages((prevMessages) => {
-              const previousCount = prevMessages.length;
-              const newCount = newMessages.length - previousCount;
+            // Update messages state first
+            setMessages(newMessages);
+            setPreviousMessageCount(newMessages.length);
 
-              // Detect new messages (received messages only)
-              if (newCount > 0 && previousCount > 0) {
-                // Find new received messages
-                const previousMessageIds = new Set(
-                  prevMessages.map((m: any) => m.id)
+            // Detect new messages (received messages only) - do async work outside setState
+            if (newCount > 0 && previousCount > 0) {
+              // Find new received messages
+              const previousMessageIds = new Set(
+                messages.map((m: any) => m.id)
+              );
+              const newReceivedMessages = newMessages.filter(
+                (msg: any) => !previousMessageIds.has(msg.id) && !msg.isSent
+              );
+
+              // Show notifications for new received messages
+              if (newReceivedMessages.length > 0) {
+                newReceivedMessages.forEach((msg: any) => {
+                  const contact = msg.from || "Unknown";
+                  const messageText = msg.text || "New message";
+                  const preview =
+                    messageText.length > 50
+                      ? messageText.substring(0, 50) + "..."
+                      : messageText;
+
+                  // Show browser notification
+                  showNotification(
+                    `New message from ${contact}`,
+                    preview,
+                    contact
+                  );
+                });
+
+                // Auto-reply if enabled for each contact (check per-contact settings)
+                // Fetch settings from API for contacts that don't have them loaded yet
+                const validContacts = newReceivedMessages
+                  .map((msg: any) => msg.from)
+                  .filter(
+                    (contact: string) =>
+                      contact && contact !== "Unknown" && contact !== "unknown"
+                  ) as string[];
+
+                // Get unique contacts to avoid sending multiple replies
+                const uniqueContacts = Array.from(new Set(validContacts));
+
+                // Fetch settings for all contacts that don't have them cached
+                const contactsNeedingSettings = uniqueContacts.filter(
+                  (contact) => !conversationSettings[contact]
                 );
-                const newReceivedMessages = newMessages.filter(
-                  (msg: any) => !previousMessageIds.has(msg.id) && !msg.isSent
-                );
 
-                // Show notifications for new received messages
-                if (newReceivedMessages.length > 0) {
-                  newReceivedMessages.forEach((msg: any) => {
-                    const contact = msg.from || "Unknown";
-                    const messageText = msg.text || "New message";
-                    const preview =
-                      messageText.length > 50
-                        ? messageText.substring(0, 50) + "..."
-                        : messageText;
+                // Load settings for contacts that aren't in cache
+                let updatedSettings = { ...conversationSettings };
+                if (contactsNeedingSettings.length > 0) {
+                  const settingsPromises = contactsNeedingSettings.map(
+                    async (contact) => {
+                      try {
+                        const apiUrl = config.backendUrl
+                          ? `${config.backendUrl}/api/conversations/settings`
+                          : "/api/conversations/settings";
+                        const response = await fetch(
+                          `${apiUrl}?contact=${encodeURIComponent(contact)}`
+                        );
+                        if (response.ok) {
+                          const data = await response.json();
+                          if (data.success) {
+                            return { contact, settings: data.settings };
+                          }
+                        }
+                      } catch (error) {
+                        console.error(
+                          `Error fetching settings for ${contact}:`,
+                          error
+                        );
+                      }
+                      return null;
+                    }
+                  );
 
-                    // Show browser notification
-                    showNotification(
-                      `New message from ${contact}`,
-                      preview,
-                      contact
-                    );
+                  const settingsResults = await Promise.all(settingsPromises);
+                  settingsResults.forEach((result) => {
+                    if (result) {
+                      updatedSettings[result.contact] = result.settings;
+                    }
                   });
 
-                  // Auto-reply if enabled for each contact (check per-contact settings)
-                  // Note: We need to fetch settings for contacts that don't have them loaded yet
-                  if (newReceivedMessages.length > 0) {
-                    const validContacts = newReceivedMessages
-                      .map((msg: any) => msg.from)
-                      .filter(
-                        (contact: string) =>
-                          contact &&
-                          contact !== "Unknown" &&
-                          contact !== "unknown"
-                      ) as string[];
-
-                    // Get unique contacts to avoid sending multiple replies
-                    const uniqueContacts = Array.from(new Set(validContacts));
-                    uniqueContacts.forEach((contact, index) => {
-                      // Check if auto-reply is enabled for this specific contact
-                      const contactSettings = conversationSettings[contact] || {
-                        auto_reply_enabled: false,
-                        auto_reply_message:
-                          "Thank you for your message! We'll get back to you soon.",
-                      };
-
-                      if (contactSettings.auto_reply_enabled) {
-                        setTimeout(() => {
-                          sendAutoReply(
-                            contact,
-                            contactSettings.auto_reply_message
-                          );
-                        }, 1000 + index * 2000); // Stagger replies to avoid rate limiting
-                      }
-                    });
-                  }
-
-                  // Show in-app notification
-                  if (silent) {
-                    setSuccess(
-                      `✓ ${newReceivedMessages.length} new message(s) received`
-                    );
-                    setTimeout(() => setSuccess(""), 3000);
+                  // Update state with all fetched settings at once
+                  if (settingsResults.some((r) => r !== null)) {
+                    setConversationSettings(updatedSettings);
                   }
                 }
-              }
 
-              // Only show success/error messages if not in silent mode
-              if (!silent) {
-                if (newMessages.length > 0) {
+                // Now check settings and send auto-replies
+                // Use updatedSettings which includes freshly fetched settings
+                for (let index = 0; index < uniqueContacts.length; index++) {
+                  const contact = uniqueContacts[index];
+                  // Get settings from updated cache or use defaults
+                  const contactSettings = updatedSettings[contact] || {
+                    auto_reply_enabled: false,
+                    auto_reply_message:
+                      "Thank you for your message! We'll get back to you soon.",
+                  };
+
+                  if (contactSettings.auto_reply_enabled) {
+                    setTimeout(() => {
+                      sendAutoReply(
+                        contact,
+                        contactSettings.auto_reply_message
+                      );
+                    }, 1000 + index * 2000); // Stagger replies to avoid rate limiting
+                  }
+                }
+
+                // Show in-app notification
+                if (silent) {
                   setSuccess(
-                    `✓ Loaded ${newMessages.length} message(s) from database`
+                    `✓ ${newReceivedMessages.length} new message(s) received`
                   );
                   setTimeout(() => setSuccess(""), 3000);
-                } else {
-                  setError(
-                    "No messages found in database. Make sure Supabase is configured and messages are being stored."
-                  );
-                  setTimeout(() => setError(""), 5000);
                 }
               }
+            }
 
-              // Update previous count for next comparison
-              setPreviousMessageCount(newMessages.length);
-
-              return newMessages;
-            });
+            // Only show success/error messages if not in silent mode
+            if (!silent) {
+              if (newMessages.length > 0) {
+                setSuccess(
+                  `✓ Loaded ${newMessages.length} message(s) from database`
+                );
+                setTimeout(() => setSuccess(""), 3000);
+              } else {
+                setError(
+                  "No messages found in database. Make sure Supabase is configured and messages are being stored."
+                );
+                setTimeout(() => setError(""), 5000);
+              }
+            }
           }
         } else {
           const errorData = await msgResponse.json();
@@ -488,18 +530,31 @@ export default function WhatsAppAdminPanel({
             ? `${config.backendUrl}/api/conversations/settings`
             : "/api/conversations/settings";
 
-          const response = await fetch(
-            `${apiUrl}?contact=${encodeURIComponent(selectedConversation)}`
+          const url = `${apiUrl}?contact=${encodeURIComponent(
+            selectedConversation
+          )}`;
+          console.log(
+            "Loading settings for conversation:",
+            selectedConversation
           );
+          console.log("API URL:", url);
 
+          const response = await fetch(url);
+
+          console.log("Load settings response status:", response.status);
           if (response.ok) {
             const data = await response.json();
+            console.log("Load settings response data:", data);
             if (data.success) {
               setConversationSettings((prev) => ({
                 ...prev,
                 [selectedConversation]: data.settings,
               }));
+              console.log("Settings loaded:", data.settings);
             }
+          } else {
+            const errorText = await response.text();
+            console.error("Failed to load settings:", errorText);
           }
         } catch (error) {
           console.error("Error loading conversation settings:", error);
@@ -511,7 +566,13 @@ export default function WhatsAppAdminPanel({
   }, [selectedConversation, config.backendUrl]);
 
   const toggleAutoReply = async (contact: string) => {
-    if (!contact) return;
+    if (!contact) {
+      console.error("toggleAutoReply: No contact provided");
+      return;
+    }
+
+    console.log("toggleAutoReply called for contact:", contact);
+    console.log("Current conversationSettings:", conversationSettings);
 
     const currentSettings = conversationSettings[contact] || {
       auto_reply_enabled: false,
@@ -520,11 +581,19 @@ export default function WhatsAppAdminPanel({
     };
 
     const newState = !currentSettings.auto_reply_enabled;
+    console.log("Toggling auto-reply to:", newState);
 
     try {
       const apiUrl = config.backendUrl
         ? `${config.backendUrl}/api/conversations/settings`
         : "/api/conversations/settings";
+
+      console.log("Calling API:", apiUrl);
+      console.log("Request body:", {
+        phone_number: contact,
+        auto_reply_enabled: newState,
+        auto_reply_message: currentSettings.auto_reply_message,
+      });
 
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -538,7 +607,9 @@ export default function WhatsAppAdminPanel({
         }),
       });
 
+      console.log("API Response status:", response.status);
       const data = await response.json();
+      console.log("API Response data:", data);
 
       if (response.ok && data.success) {
         // Update local state
@@ -550,6 +621,8 @@ export default function WhatsAppAdminPanel({
           },
         }));
 
+        console.log("Settings updated successfully");
+
         if (newState) {
           setSuccess(`Auto-reply enabled for ${contact}`);
         } else {
@@ -560,6 +633,7 @@ export default function WhatsAppAdminPanel({
         throw new Error(data.error || "Failed to update settings");
       }
     } catch (error: any) {
+      console.error("Error in toggleAutoReply:", error);
       setError(`Failed to update auto-reply: ${error.message}`);
       setTimeout(() => setError(""), 5000);
     }
@@ -884,7 +958,15 @@ export default function WhatsAppAdminPanel({
                     <span className="text-xs text-gray-700">Auto-Reply</span>
                     <button
                       type="button"
-                      onClick={() => toggleAutoReply(selectedConversation)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log(
+                          "Toggle button clicked for:",
+                          selectedConversation
+                        );
+                        toggleAutoReply(selectedConversation);
+                      }}
                       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                         conversationSettings[selectedConversation]
                           ?.auto_reply_enabled

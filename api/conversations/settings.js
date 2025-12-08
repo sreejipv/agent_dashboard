@@ -12,13 +12,21 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  console.log('Conversation settings API called:', req.method, req.url);
+  console.log('Query:', req.query);
+  console.log('Body:', req.body);
+
   try {
     const config = getConfig();
     
     if (!config.supabaseUrl || !config.supabaseKey) {
+      console.warn('Supabase not configured');
       return res.status(200).json({
         success: true,
-        settings: {},
+        settings: {
+          auto_reply_enabled: false,
+          auto_reply_message: "Thank you for your message! We'll get back to you soon.",
+        },
       });
     }
 
@@ -36,18 +44,22 @@ export default async function handler(req, res) {
         });
       }
 
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/conversations?phone_number=eq.${contact}&select=*`,
-        {
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const supabaseUrl = `${SUPABASE_URL}/rest/v1/conversations?phone_number=eq.${encodeURIComponent(contact)}&select=*`;
+      console.log('Fetching from Supabase:', supabaseUrl);
+      
+      const response = await fetch(supabaseUrl, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('Supabase response status:', response.status);
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.log('Supabase error response:', errorText);
         // If table doesn't exist or no record, return default
         return res.status(200).json({
           success: true,
@@ -60,14 +72,17 @@ export default async function handler(req, res) {
       }
 
       const data = await response.json();
+      console.log('Supabase data:', data);
       
       if (data && data.length > 0) {
+        console.log('Returning settings:', data[0]);
         return res.status(200).json({
           success: true,
           settings: data[0],
         });
       } else {
         // Return default if no record exists
+        console.log('No settings found, returning default');
         return res.status(200).json({
           success: true,
           settings: {
@@ -91,17 +106,18 @@ export default async function handler(req, res) {
       }
 
       // Check if record exists
-      const checkResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/conversations?phone_number=eq.${phone_number}&select=phone_number`,
-        {
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-          },
-        }
-      );
+      const checkUrl = `${SUPABASE_URL}/rest/v1/conversations?phone_number=eq.${encodeURIComponent(phone_number)}&select=phone_number`;
+      console.log('Checking existing record:', checkUrl);
+      
+      const checkResponse = await fetch(checkUrl, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+        },
+      });
 
       const existing = checkResponse.ok ? await checkResponse.json() : [];
+      console.log('Existing record:', existing);
 
       const settingsData = {
         phone_number: phone_number,
@@ -114,7 +130,7 @@ export default async function handler(req, res) {
       if (existing && existing.length > 0) {
         // Update existing
         response = await fetch(
-          `${SUPABASE_URL}/rest/v1/conversations?phone_number=eq.${phone_number}`,
+          `${SUPABASE_URL}/rest/v1/conversations?phone_number=eq.${encodeURIComponent(phone_number)}`,
           {
             method: 'PATCH',
             headers: {
@@ -146,14 +162,15 @@ export default async function handler(req, res) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Failed to save conversation settings:', errorText);
+        console.error('Failed to save conversation settings:', response.status, errorText);
         return res.status(500).json({
           success: false,
-          error: 'Failed to save settings',
+          error: `Failed to save settings: ${errorText}`,
         });
       }
 
       const result = await response.json();
+      console.log('Settings saved successfully:', result);
       return res.status(200).json({
         success: true,
         settings: Array.isArray(result) ? result[0] : result,
