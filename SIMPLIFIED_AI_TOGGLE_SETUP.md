@@ -181,3 +181,4 @@ The AI toggle is now in the **top header** of the admin panel:
 - Check RLS policies allow your API key to read/write
 - Verify table has default value: `auto_reply_enabled = 'false'`
 
+

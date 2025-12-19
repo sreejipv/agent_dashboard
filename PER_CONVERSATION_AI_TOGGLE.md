@@ -195,3 +195,4 @@ The AI toggle is in the **chat header** (right side, when a conversation is sele
 ✅ **Manual Override**: When OFF, you reply manually from dashboard
 ✅ **Database Stored**: Settings persist in Supabase `conversations` table
 
+

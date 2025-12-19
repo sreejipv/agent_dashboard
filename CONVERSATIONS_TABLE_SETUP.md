@@ -77,3 +77,4 @@ The admin panel will automatically:
 - **GET** `/api/conversations/settings?contact=PHONE_NUMBER` - Get settings for a contact
 - **POST** `/api/conversations/settings` - Create or update settings for a contact
 
+

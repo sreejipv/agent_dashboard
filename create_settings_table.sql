@@ -48,3 +48,4 @@ INSERT INTO settings (key, value)
 VALUES ('auto_reply_enabled', 'false')
 ON CONFLICT (key) DO NOTHING;
 
+

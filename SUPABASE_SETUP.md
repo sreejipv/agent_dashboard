@@ -120,3 +120,4 @@ If you're using n8n to receive webhooks and store messages:
 - If your fields have different names, you may need to update `api/messages.js` to match your schema
 - Or create a view in Supabase that maps your fields to the expected names
 
+
