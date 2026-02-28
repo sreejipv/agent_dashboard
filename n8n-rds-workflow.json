@@ -173,7 +173,7 @@
     },
     {
       "parameters": {
-        "url": "=https://agents.fellocoder.com/api/conversations/settings?contact={{ $('WhatsApp Trigger').item.json.messages[0].from }}",
+        "url": "=https://clients.fellocoder.com/api/conversations/settings?contact={{ $('WhatsApp Trigger').item.json.messages[0].from }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -216,7 +216,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://agents.fellocoder.com/api/n8n/receive",
+        "url": "https://clients.fellocoder.com/api/n8n/receive",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"message_id\": \"{{ $json.messages[0].id }}\",\n  \"from\": \"{{ $json.messages[0].from }}\",\n  \"to\": \"{{ $json.metadata.phone_number_id }}\",\n  \"text\": \"{{ $json.messages[0].text.body }}\",\n  \"timestamp\": {{ $json.messages[0].timestamp }},\n  \"type\": \"{{ $json.messages[0].type }}\",\n  \"is_sent\": false\n}",
@@ -231,7 +231,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://agents.fellocoder.com/api/n8n/receive",
+        "url": "https://clients.fellocoder.com/api/n8n/receive",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"message_id\": \"bot_{{ $now.format('x') }}_{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"from\": \"852119087983190\",\n  \"to\": \"{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"text\": \"{{ $('AI Sales Agent').item.json.output }}\",\n  \"timestamp\": {{ $now.format('X') }},\n  \"type\": \"text\",\n  \"is_sent\": true\n}",
@@ -246,7 +246,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://agents.fellocoder.com/api/n8n/receive",
+        "url": "https://clients.fellocoder.com/api/n8n/receive",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"message_id\": \"bot_{{ $now.format('x') }}_{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"from\": \"852119087983190\",\n  \"to\": \"{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"text\": \"I'm unable to process non-text messages. Please send only text messages. Thanks!\",\n  \"timestamp\": {{ $now.format('X') }},\n  \"type\": \"text\",\n  \"is_sent\": true\n}",

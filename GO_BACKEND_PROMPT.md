@@ -168,7 +168,7 @@ JWT_EXPIRY              # default: 168h (7 days)
 WEBHOOK_SECRET          # shared secret; callers must send X-Webhook-Secret header
 
 # Client portal base URL (for magic link generation)
-PORTAL_BASE_URL         # e.g. https://agent-dashboard-teh2.vercel.app
+PORTAL_BASE_URL         # e.g. https://agents.fellocoder.com
 ```
 
 ---
@@ -443,7 +443,7 @@ Request:
 ## CORS update
 
 The new routes need `Access-Control-Allow-Credentials: true` for the browser to send
-the httpOnly cookie cross-origin (Vercel frontend → EC2 backend).
+the httpOnly cookie cross-origin (agents.fellocoder.com frontend → clients.fellocoder.com backend).
 
 Update the `corsMW` in `internal/httpapi/middleware.go`:
 - Add `w.Header().Set("access-control-allow-credentials", "true")`
