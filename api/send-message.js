@@ -1,5 +1,6 @@
 // api/send-message.js
 import { validateConfig } from './config.js';
+import { getPool } from './db.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -18,37 +19,31 @@ export default async function handler(req, res) {
     const { to, message } = req.body;
 
     if (!to || !message) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required fields: to and message' 
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: to and message',
       });
     }
 
     const config = validateConfig();
 
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_KEY = process.env.SUPABASE_KEY;
-
-    // Send message to WhatsApp
+    // Send message via WhatsApp API
     console.log('Sending WhatsApp message to:', to);
     const whatsappResponse = await fetch(
       `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${config.accessToken}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${config.accessToken}`,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
-          to: to,
+          to,
           type: 'text',
-          text: {
-            preview_url: false,
-            body: message
-          }
-        })
+          text: { preview_url: false, body: message },
+        }),
       }
     );
 
@@ -63,57 +58,40 @@ export default async function handler(req, res) {
 
     console.log('WhatsApp message sent successfully:', messageId);
 
-    // Store sent message in Supabase
-    if (SUPABASE_URL && SUPABASE_KEY) {
-      console.log('Storing message in database...');
-      
-      const messageRecord = {
-        id: messageId,
-        from_number: config.phoneNumberId,
-        to_number: to,
-        message_text: message,
-        timestamp: Math.floor(Date.now() / 1000),
-        message_type: 'text',
-        status: 'sent',
-        is_sent: true
-      };
-
-      const storeResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/messages`,
-        {
-          method: 'POST',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
-          },
-          body: JSON.stringify(messageRecord)
-        }
+    // Store sent message in RDS
+    try {
+      await getPool().query(
+        `INSERT INTO messages (id, from_number, to_number, message_text, timestamp, message_type, status, is_sent)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          messageId,
+          config.phoneNumberId,
+          to,
+          message,
+          Math.floor(Date.now() / 1000),
+          'text',
+          'sent',
+          true,
+        ]
       );
-
-      if (!storeResponse.ok) {
-        const errorText = await storeResponse.text();
-        console.error('Failed to store in Supabase:', errorText);
-        // Don't fail the request if storage fails, but log it
-      } else {
-        console.log('Message stored in database successfully');
-      }
-    } else {
-      console.warn('Supabase not configured - message not stored in database');
+      console.log('Message stored in RDS successfully');
+    } catch (dbErr) {
+      // Don't fail the request if storage fails — log and continue
+      console.error('Failed to store message in RDS:', dbErr.message);
     }
 
-    return res.status(200).json({ 
-      success: true, 
+    return res.status(200).json({
+      success: true,
       data: whatsappData,
-      messageId: messageId
+      messageId,
     });
 
   } catch (error) {
     console.error('Send message error:', error);
-    return res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    return res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 }
