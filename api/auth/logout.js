@@ -1,5 +1,6 @@
 // api/auth/logout.js
-import { serialize } from 'cookie';
+import cookiePkg from 'cookie';
+const { serialize } = cookiePkg;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -7,10 +8,11 @@ export default async function handler(req, res) {
   }
 
   // Clear the authentication cookie
+  const isProduction = process.env.NODE_ENV === 'production';
   const cookie = serialize('admin_token', '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
     maxAge: 0, // Expire immediately
     path: '/',
   });

@@ -10,10 +10,12 @@
 //   client_name:     string,  // for the notification message
 //   file_name:       string,  // display name e.g. "invoice-march.pdf"
 //   file_url:        string,  // publicly accessible URL (S3 pre-signed or public)
-//   notify_whatsapp: boolean  // optional, default false
+//   notify_whatsapp: boolean, // optional, default false
+//   tenant_slug:     string   // optional, defaults to 'fellocoder' for Phase 1
 // }
 import { getPool } from '../db.js';
 import { getConfig } from '../config.js';
+import { getTenantIdBySlug } from '../lib/tenant.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -35,7 +37,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { client_phone, client_name, file_name, file_url, notify_whatsapp } = req.body;
+    const { client_phone, client_name, file_name, file_url, notify_whatsapp, tenant_slug } = req.body;
 
     if (!client_phone || !file_name || !file_url) {
       return res.status(400).json({
@@ -44,12 +46,18 @@ export default async function handler(req, res) {
       });
     }
 
+    // Resolve tenant — default to 'fellocoder' for Phase 1 backward compatibility
+    const tenantId = await getTenantIdBySlug(tenant_slug || 'fellocoder');
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Unknown tenant' });
+    }
+
     // Store file reference
     const { rows } = await getPool().query(
-      `INSERT INTO client_files (client_phone, file_name, file_url)
-       VALUES ($1, $2, $3)
+      `INSERT INTO client_files (client_phone, file_name, file_url, tenant_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [client_phone, file_name, file_url]
+      [client_phone, file_name, file_url, tenantId]
     );
 
     const fileId = rows[0]?.id;
@@ -61,7 +69,7 @@ export default async function handler(req, res) {
         const config = getConfig();
         if (config.accessToken && config.phoneNumberId) {
           const name = client_name || client_phone;
-          const messageBody = `Hi ${name}! 📁 A new file has been uploaded to your project: *${file_name}*. You can view and download it from your client portal.`;
+          const messageBody = `Hi ${name}! A new file has been uploaded to your project: *${file_name}*. You can view and download it from your client portal.`;
 
           const waRes = await fetch(
             `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`,

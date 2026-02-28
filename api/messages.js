@@ -1,9 +1,9 @@
 // api/messages.js
 import { getConfig } from './config.js';
 import { getPool } from './db.js';
+import { requireAuth } from './lib/auth.js';
 
 export default async function handler(req, res) {
-  // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -16,11 +16,16 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const auth = requireAuth(req, res);
+  if (!auth) return;
+
   try {
     const config = getConfig();
+    const { tenantId } = auth;
 
     const { rows: messages } = await getPool().query(
-      'SELECT * FROM messages ORDER BY timestamp DESC LIMIT 100'
+      'SELECT * FROM messages WHERE tenant_id = $1 ORDER BY timestamp DESC LIMIT 100',
+      [tenantId]
     );
 
     // Format messages for the frontend
@@ -80,10 +85,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Get messages error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    console.error('[messages] Error:', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 }

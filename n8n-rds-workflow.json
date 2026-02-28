@@ -1,0 +1,307 @@
+{
+  "name": "My workflow 3",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "id": "e86fc1e5-6e82-42ab-8f8d-330147ee8edc",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "position": [-1104, 416],
+      "webhookId": "aaa71f03-f7af-4d18-8d9a-0afb86f1b554",
+      "typeVersion": 1,
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "sTFNJkMjgsrzWWJF",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-2024-08-06",
+        "options": {}
+      },
+      "id": "9a9fa404-9417-466a-8137-869ad8f44331",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [496, 496],
+      "typeVersion": 1,
+      "credentials": {
+        "openAiApi": {
+          "id": "I9WBo0kne99OrUeX",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=whatsapp-75-{{ $json.messages[0].from }}"
+      },
+      "id": "1b310069-307b-4e49-acf0-71b5bb7de41e",
+      "name": "Window Buffer Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "position": [656, 496],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "852119087983190",
+        "recipientPhoneNumber": "={{ $('WhatsApp Trigger').item.json.messages[0].from }}",
+        "textBody": "={{ $json.output }}",
+        "additionalFields": {
+          "previewUrl": false
+        }
+      },
+      "id": "e9e58d44-1cc5-475f-a80c-0f0f48fe184d",
+      "name": "Reply To User",
+      "type": "n8n-nodes-base.whatsApp",
+      "position": [1408, 416],
+      "typeVersion": 1,
+      "webhookId": "698e9ef6-cf34-4833-9594-877dfd2ca339",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "hRL4FsPBFGVRSK7N",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "852119087983190",
+        "recipientPhoneNumber": "={{ $('WhatsApp Trigger').item.json.messages[0].from }}",
+        "textBody": "=I'm unable to process non-text messages. Please send only text messages. Thanks!",
+        "additionalFields": {
+          "previewUrl": false
+        }
+      },
+      "id": "5f5ecd61-9464-4fb4-87e5-8667b14212de",
+      "name": "Reply To User1",
+      "type": "n8n-nodes-base.whatsApp",
+      "position": [336, 768],
+      "typeVersion": 1,
+      "webhookId": "7cccfc36-8c84-4cc3-85c8-4442e0869171",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "hRL4FsPBFGVRSK7N",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $('WhatsApp Trigger').item.json.messages[0].type }}",
+                    "rightValue": "text",
+                    "id": "e186f02e-4585-4c9d-83d3-93d52848fabf"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Supported"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "89971d8c-a386-4e77-8f6c-f491a8e84cb6",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    },
+                    "leftValue": "={{ $('WhatsApp Trigger').item.json.messages[0].type }}",
+                    "rightValue": "text"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Not Supported"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "326b028d-abc0-4c46-8d19-31610c602ba4",
+      "name": "Handle Message Types",
+      "type": "n8n-nodes-base.switch",
+      "position": [128, 416],
+      "typeVersion": 3.2
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('WhatsApp Trigger').item.json.messages[0].text.body }}",
+        "options": {
+          "systemMessage": "You are FelloCoder Chatbot, a friendly team member at FelloCoder.\nYour job is to chat with potential clients about their tech needs in a warm, human, and simple way.\n\nRole & Style\n\nTalk like a real person, not a bot.\n\nUse natural, conversational language with contractions (we're, that's, it's).\n\nKeep replies short and punchy: usually 1â3 sentences max, unless the user clearly asks for more detail.\n\nBe warm but professional: friendly, respectful, and calm. Avoid sounding like a sales script.\n\nUse emojis rarely (at most one light emoji when it really fits). Many messages should have no emoji at all.\n\nAvoid repeating greetings (âà´¹à´²àµ à´¹à´²àµâ, âhello helloâ) or sounding stiff or robotic.\n\nLanguage Behaviour\n\nAlways reply in the main language the user uses.\n\nIf the user writes in Malayalam, reply fully in natural Malayalam, in a friendly but respectful tone using âà´¨à´¿à´àµà´àµ¾â.\n\nIf the user writes in English, reply in English.\n\nIf they mix languages, answer in the language they seem more comfortable with, usually the one used most in the last message.\n\nDo not translate or explain languages unless the user asks for translation.\n\nMake Malayalam feel natural, like real conversation, not a literal word-by-word translation from English.\n\nWhat FelloCoder Does\n\nWe are an on-demand tech team â like having a tech department without full-time hiring.\n\nWe help with websites, web apps, e-commerce, automations, and AI solutions.\n\nWe work on a monthly subscription with unlimited task requests.\n\nEssential â $99/month, 1 active task at a time, ~4-day delivery.\n\nGrow â $499/month, 2 active tasks at a time, 24â48 hour delivery, dedicated coordinator.\n\nClients can pause or cancel anytime. If no work is done in a billing period, we offer a refund.\n\nWe donât run marketing/ads campaigns; we build and automate systems that are easy for the clientâs team to use.\n\nHow to Answer\n\nAnswer their question first, in the simplest way possible.\n\nThen, if useful, ask one short follow-up question to understand them better.\n\nDonât dump all features at once. Share only whatâs relevant to what they asked.\n\nUse examples instead of long explanations:\n\nFor e-commerce: âWe can help with payment gateways, fixing checkout issues, or setting up inventory and order flows.â\n\nAvoid formal phrases like âAt FelloCoder weâ¦â â just say âWeâ¦â.\n\nPricing & Timelines\n\nWhen asked about price:\n\nâOur Essential plan is $99/month for one active task at a time, and our Grow plan is $499/month with two active tasks and faster turnaround. Both give you unlimited requests; you just choose the priority.â\n\nWhen asked about speed:\n\nâMost updates get a first version in 24â48 hours. Bigger projects we break into smaller tasks and handle step by step.â\n\nCollecting Info\n\nDonât ask for contact details immediately. First understand their need.\n\nAfter there is interest:\n\nâWould love to learn more and suggest next steps. Can I get your name and email?â\n\nOr: âIf youâd like, we can do a quick 15-minute call to walk through your project.â\n\nSpecial Cases\n\nRefunds/cancellation: âYou can pause or cancel anytime. If we havenât done work in your billing period, weâll refund you.â\n\nOutside scope (billing/legal/special policies): âThatâs better handled by our team directly. Please email hello@fellocoder.com\n or call +91 79070 73935.â\n\nIf they ask the same thing again, answer briefly again and gently confirm:\n\nâJust to repeat quickly: most updates come back in 24â48 hours. Does that work for you?â\n\nAlways aim to sound like a helpful teammate over WhatsApp â short, clear messages, friendly tone, and replies in the same language the user chos"
+        }
+      },
+      "id": "8784c631-f9ad-445f-9185-eed9701a9511",
+      "name": "AI Sales Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [544, 288],
+      "typeVersion": 1.6
+    },
+    {
+      "parameters": {
+        "url": "=https://agent-dashboard-teh2.vercel.app/api/conversations/settings?contact={{ $('WhatsApp Trigger').item.json.messages[0].from }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-560, 416],
+      "id": "7aecd478-5efa-473a-b8cc-6f950b59b001",
+      "name": "Check Auto-Reply Settings"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2c403186-52db-4476-97d3-f804de038546",
+              "leftValue": "={{ $json.settings.auto_reply_enabled }}",
+              "rightValue": "\"true\"",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-352, 416],
+      "id": "3bb2c5df-3c39-47e0-8021-a20bcca51caf",
+      "name": "Is Auto-Reply Enabled?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://agent-dashboard-teh2.vercel.app/api/n8n/receive",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message_id\": \"{{ $json.messages[0].id }}\",\n  \"from\": \"{{ $json.messages[0].from }}\",\n  \"to\": \"{{ $json.metadata.phone_number_id }}\",\n  \"text\": \"{{ $json.messages[0].text.body }}\",\n  \"timestamp\": {{ $json.messages[0].timestamp }},\n  \"type\": \"{{ $json.messages[0].type }}\",\n  \"is_sent\": false\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-768, 416],
+      "id": "f3eb93cd-7757-4910-892b-1f60629700c4",
+      "name": "Store Incoming Message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://agent-dashboard-teh2.vercel.app/api/n8n/receive",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message_id\": \"bot_{{ $now.format('x') }}_{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"from\": \"852119087983190\",\n  \"to\": \"{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"text\": \"{{ $('AI Sales Agent').item.json.output }}\",\n  \"timestamp\": {{ $now.format('X') }},\n  \"type\": \"text\",\n  \"is_sent\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1680, 416],
+      "id": "45465236-528f-4327-b833-0f51afeae3c2",
+      "name": "Store Incoming Message1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://agent-dashboard-teh2.vercel.app/api/n8n/receive",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message_id\": \"bot_{{ $now.format('x') }}_{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"from\": \"852119087983190\",\n  \"to\": \"{{ $('WhatsApp Trigger').item.json.messages[0].from }}\",\n  \"text\": \"I'm unable to process non-text messages. Please send only text messages. Thanks!\",\n  \"timestamp\": {{ $now.format('X') }},\n  \"type\": \"text\",\n  \"is_sent\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [624, 768],
+      "id": "9c543488-04c2-419b-9d34-39f0497bf156",
+      "name": "Store Incoming Message2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AI Sales Agent": {
+      "main": [[{ "node": "Reply To User", "type": "main", "index": 0 }]]
+    },
+    "WhatsApp Trigger": {
+      "main": [[{ "node": "Store Incoming Message", "type": "main", "index": 0 }]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Sales Agent", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Handle Message Types": {
+      "main": [
+        [{ "node": "AI Sales Agent", "type": "main", "index": 0 }],
+        [{ "node": "Reply To User1", "type": "main", "index": 0 }]
+      ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [[{ "node": "AI Sales Agent", "type": "ai_memory", "index": 0 }]]
+    },
+    "Store Incoming Message": {
+      "main": [[{ "node": "Check Auto-Reply Settings", "type": "main", "index": 0 }]]
+    },
+    "Reply To User": {
+      "main": [[{ "node": "Store Incoming Message1", "type": "main", "index": 0 }]]
+    },
+    "Reply To User1": {
+      "main": [[{ "node": "Store Incoming Message2", "type": "main", "index": 0 }]]
+    },
+    "Check Auto-Reply Settings": {
+      "main": [[{ "node": "Is Auto-Reply Enabled?", "type": "main", "index": 0 }]]
+    },
+    "Is Auto-Reply Enabled?": {
+      "main": [[{ "node": "Handle Message Types", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "21fb3b14-1248-4bff-8dec-8f0d382b9d5b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "108ac8c4ac763709bfefcb276a3b17345f99ad97541ff813f775c1bfa69c3705"
+  },
+  "id": "0yfokds7u6TZRFTT",
+  "tags": []
+}

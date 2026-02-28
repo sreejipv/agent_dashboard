@@ -55,7 +55,7 @@ export default function WhatsAppAdminPanel({
   useEffect(() => {
     // Auto-detect if we're on Vercel or localhost
     const isProduction = window.location.hostname !== "localhost";
-    const baseUrl = isProduction ? "" : "http://localhost:3001";
+    const baseUrl = isProduction ? (process.env.NEXT_PUBLIC_BACKEND_URL || "") : "http://localhost:3001";
 
     const saved = localStorage.getItem("whatsapp-config");
     if (saved) {
@@ -117,7 +117,7 @@ export default function WhatsAppAdminPanel({
         const messagesUrl = config.backendUrl
           ? `${config.backendUrl}/api/messages`
           : "/api/messages";
-        const msgResponse = await fetch(messagesUrl);
+        const msgResponse = await fetch(messagesUrl, { credentials: "include" });
         if (msgResponse.ok) {
           const msgData = await msgResponse.json();
           if (msgData.success) {
@@ -313,7 +313,7 @@ export default function WhatsAppAdminPanel({
       const apiUrl = config.backendUrl
         ? `${config.backendUrl}/api/verify-phone`
         : "/api/verify-phone";
-      const response = await fetch(apiUrl);
+      const response = await fetch(apiUrl, { credentials: "include" });
 
       if (!response.ok) {
         throw new Error(`Server Error: ${response.status}`);
@@ -372,6 +372,7 @@ export default function WhatsAppAdminPanel({
 
       const response = await fetch(apiUrl, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -430,7 +431,8 @@ export default function WhatsAppAdminPanel({
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", {
+      const logoutUrl = config.backendUrl ? `${config.backendUrl}/api/auth/logout` : "/api/auth/logout";
+      await fetch(logoutUrl, {
         method: "POST",
       });
       // Redirect to login
@@ -455,7 +457,7 @@ export default function WhatsAppAdminPanel({
             selectedConversation
           )}`;
 
-          const response = await fetch(url);
+          const response = await fetch(url, { credentials: "include" });
           if (response.ok) {
             const data = await response.json();
             if (data.success) {
@@ -496,6 +498,7 @@ export default function WhatsAppAdminPanel({
 
       const response = await fetch(apiUrl, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

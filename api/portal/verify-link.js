@@ -53,24 +53,24 @@ export default async function handler(req, res) {
       return res.status(410).json({ success: false, error: 'Link has expired' });
     }
 
-    const { client_phone, client_name } = link;
+    const { client_phone, client_name, tenant_id } = link;
 
-    // Fetch all client data in parallel
+    // Fetch all client data in parallel, scoped to the tenant from the magic link
     const [messagesResult, milestonesResult, filesResult] = await Promise.all([
       pool.query(
         `SELECT id, from_number, to_number, message_text AS text, timestamp, message_type AS type, status, is_sent
          FROM messages
-         WHERE from_number = $1 OR to_number = $1
+         WHERE (from_number = $1 OR to_number = $1) AND tenant_id = $2
          ORDER BY timestamp ASC`,
-        [client_phone]
+        [client_phone, tenant_id]
       ),
       pool.query(
-        'SELECT id, title, status, completed_at, created_at FROM milestones WHERE client_phone = $1 ORDER BY created_at ASC',
-        [client_phone]
+        'SELECT id, title, status, completed_at, created_at FROM milestones WHERE client_phone = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+        [client_phone, tenant_id]
       ),
       pool.query(
-        'SELECT id, file_name, file_url, uploaded_at FROM client_files WHERE client_phone = $1 ORDER BY uploaded_at DESC',
-        [client_phone]
+        'SELECT id, file_name, file_url, uploaded_at FROM client_files WHERE client_phone = $1 AND tenant_id = $2 ORDER BY uploaded_at DESC',
+        [client_phone, tenant_id]
       ),
     ]);
 

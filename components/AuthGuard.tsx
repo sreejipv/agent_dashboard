@@ -14,7 +14,8 @@ export default function AuthGuard() {
 
   const checkAuth = async () => {
     try {
-      const response = await fetch("/api/auth/verify");
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+      const response = await fetch(`${backendUrl}/api/auth/verify`, { credentials: "include" });
       const data = await response.json();
       setAuthenticated(data.authenticated === true);
     } catch (error) {

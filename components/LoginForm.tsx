@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Lock, LogIn, AlertCircle } from "lucide-react";
 
 export default function LoginForm() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -14,18 +15,20 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+      const response = await fetch(`${backendUrl}/api/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ password }),
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || "Invalid password");
+        throw new Error(data.error || "Invalid credentials");
       }
 
       // Redirect to admin panel
@@ -60,6 +63,25 @@ export default function LoginForm() {
 
           <div>
             <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@fellocoder.com"
+              required
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label
               htmlFor="password"
               className="block text-sm font-medium text-gray-700 mb-2"
             >
@@ -73,13 +95,12 @@ export default function LoginForm() {
               placeholder="Enter your password"
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              autoFocus
             />
           </div>
 
           <button
             type="submit"
-            disabled={loading || !password}
+            disabled={loading || !email || !password}
             className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
           >
             {loading ? (
@@ -95,15 +116,7 @@ export default function LoginForm() {
             )}
           </button>
         </form>
-
-        <div className="mt-6 text-center text-sm text-gray-500">
-          <p>
-            Set your password in the <code className="bg-gray-100 px-2 py-1 rounded">ADMIN_PASSWORD</code> environment variable
-          </p>
-        </div>
       </div>
     </div>
   );
 }
-
-

@@ -70,7 +70,7 @@ export default function ClientPortalPage() {
 
     const load = async () => {
       try {
-        const res = await fetch(`/api/portal/verify-link?token=${encodeURIComponent(token)}`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ""}/api/portal/verify-link?token=${encodeURIComponent(token)}`);
         const json = await res.json();
 
         if (!res.ok || !json.success) {

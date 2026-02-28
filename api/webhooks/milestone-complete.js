@@ -6,13 +6,15 @@
 //
 // POST body:
 // {
-//   client_phone:   string,   // client's WhatsApp number
-//   client_name:    string,   // for the notification message
+//   client_phone:    string,  // client's WhatsApp number
+//   client_name:     string,  // for the notification message
 //   milestone_title: string,  // e.g. "Design mockups approved"
-//   notify_whatsapp: boolean  // optional, default false
+//   notify_whatsapp: boolean, // optional, default false
+//   tenant_slug:     string   // optional, defaults to 'fellocoder' for Phase 1
 // }
 import { getPool } from '../db.js';
 import { getConfig } from '../config.js';
+import { getTenantIdBySlug } from '../lib/tenant.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -34,7 +36,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { client_phone, client_name, milestone_title, notify_whatsapp } = req.body;
+    const { client_phone, client_name, milestone_title, notify_whatsapp, tenant_slug } = req.body;
 
     if (!client_phone || !milestone_title) {
       return res.status(400).json({
@@ -43,15 +45,21 @@ export default async function handler(req, res) {
       });
     }
 
+    // Resolve tenant — default to 'fellocoder' for Phase 1 backward compatibility
+    const tenantId = await getTenantIdBySlug(tenant_slug || 'fellocoder');
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Unknown tenant' });
+    }
+
     const now = new Date().toISOString();
 
     // Upsert milestone as complete
     const { rows } = await getPool().query(
-      `INSERT INTO milestones (client_phone, title, status, completed_at)
-       VALUES ($1, $2, 'complete', $3)
+      `INSERT INTO milestones (client_phone, title, status, completed_at, tenant_id)
+       VALUES ($1, $2, 'complete', $3, $4)
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [client_phone, milestone_title, now]
+      [client_phone, milestone_title, now, tenantId]
     );
 
     const milestoneId = rows[0]?.id;
@@ -63,7 +71,7 @@ export default async function handler(req, res) {
         const config = getConfig();
         if (config.accessToken && config.phoneNumberId) {
           const name = client_name || client_phone;
-          const messageBody = `Hi ${name}! ✅ Great news — your milestone "*${milestone_title}*" has been completed. Log in to your client portal to see the latest updates.`;
+          const messageBody = `Hi ${name}! Great news — your milestone "*${milestone_title}*" has been completed. Log in to your client portal to see the latest updates.`;
 
           const waRes = await fetch(
             `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`,

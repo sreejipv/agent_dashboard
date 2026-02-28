@@ -11,9 +11,8 @@
 //
 // Response:
 // { success: true, url: "https://your-domain.com/portal/<token>", token: "<token>" }
-import { verify } from 'jsonwebtoken';
-import { parse } from 'cookie';
 import { getPool } from '../db.js';
+import { requireAuth } from '../lib/auth.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
@@ -29,18 +28,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Verify admin auth
-  try {
-    const cookies = parse(req.headers.cookie || '');
-    const token = cookies.admin_token;
-    if (!token) {
-      return res.status(401).json({ success: false, error: 'Not authenticated' });
-    }
-    const secret = process.env.JWT_SECRET || process.env.ADMIN_PASSWORD;
-    verify(token, secret);
-  } catch {
-    return res.status(401).json({ success: false, error: 'Invalid or expired session' });
-  }
+  const auth = requireAuth(req, res);
+  if (!auth) return;
 
   try {
     const { client_phone, client_name, client_email } = req.body;
@@ -53,12 +42,12 @@ export default async function handler(req, res) {
     const expiresAt  = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
     await getPool().query(
-      `INSERT INTO magic_links (token, client_phone, client_name, client_email, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [magicToken, client_phone, client_name || '', client_email || '', expiresAt]
+      `INSERT INTO magic_links (token, client_phone, client_name, client_email, expires_at, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [magicToken, client_phone, client_name || '', client_email || '', expiresAt, auth.tenantId]
     );
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${req.headers.host}`;
+    const baseUrl   = process.env.NEXT_PUBLIC_BASE_URL || `https://${req.headers.host}`;
     const portalUrl = `${baseUrl}/portal/${magicToken}`;
 
     console.log(`[portal/generate-link] Created link for ${client_phone}: ${portalUrl}`);
